@@ -4,7 +4,8 @@
 Serves this directory, drives Chrome, writes screenshots/, and (if ffmpeg
 is installed) records the kiosk auto-demo to demo.mp4.
 """
-import asyncio, glob, os, shutil, socket, subprocess, sys, time
+import asyncio, glob, json, os, shutil, socket, subprocess, sys, threading, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from playwright.async_api import async_playwright
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -77,8 +78,18 @@ async def demo(page):
 
 
 async def live(page):
+    with open(os.path.join(ROOT, "status.json"), encoding="utf-8") as f:
+        root_doc = json.load(f)
+    root_state = str(root_doc.get("state") or "")
+    if root_state == "failed" and (root_doc.get("summary") or root_doc.get("fix")):
+        root_visual = "explained"
+    elif root_state not in ("healthy", "failed", "analyzing", "resolved"):
+        root_visual = "error"
+    else:
+        root_visual = root_state
+    root_txt = str(root_doc.get("summary") or root_doc.get("service") or "DEPLOY")
     cases = [
-        ("?live", "healthy", "healthy", "3/3 pods ready", "live-healthy.png"),
+        ("?live", root_state, root_visual, root_txt, "live-root.png"),
         ("?live=./fixtures/failed.json", "failed", "explained", "migration 0042", "live-failed.png"),
         ("?live=./fixtures/failed-plain.json", "failed", "failed", "DEPLOY FAILED", "live-failed-plain.png"),
         ("?live=./fixtures/analyzing.json", "analyzing", "analyzing", "reading the failed rollout", "live-analyzing.png"),
@@ -218,7 +229,9 @@ async def viewports(browser):
     for width, height in VIEWPORTS:
         for mode in ("demo", "live"):
             page = await browser.new_page(viewport={"width": width, "height": height})
-            query = "?live" if mode == "live" else ""
+            # Root status.json is the live document and changes. Layout checks
+            # use a fixed healthy fixture so the headline assertion stays stable.
+            query = "?live=./fixtures/healthy.json" if mode == "live" else ""
             await page.goto(URL + query)
             if mode == "live":
                 await page.wait_for_function(
@@ -237,6 +250,93 @@ async def viewports(browser):
             await page.close()
 
 
+async def cache_bust(browser):
+    """A max-age=600 response must not pin ?live to the first body."""
+    hits = []
+    doc = {
+        "state": "healthy",
+        "service": "checkout-api",
+        "summary": "Rollout complete. 3/3 pods ready.",
+        "fix": "",
+        "run_url": "https://example.test/1",
+        "updated_at": "2026-10-13T09:13:40Z",
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            path = self.path.split("?", 1)[0]
+            if path == "/status.json":
+                hits.append({
+                    "path": self.path,
+                    "cache_control": self.headers.get("Cache-Control"),
+                    "pragma": self.headers.get("Pragma"),
+                })
+                raw = json.dumps(doc).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "max-age=600")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            rel = (path.lstrip("/") or "index.html")
+            file_path = os.path.join(ROOT, rel)
+            if not os.path.isfile(file_path) or not os.path.realpath(file_path).startswith(ROOT):
+                self.send_error(404)
+                return
+            ctype = "text/html"
+            if rel.endswith(".js"):
+                ctype = "text/javascript"
+            elif rel.endswith(".css"):
+                ctype = "text/css"
+            data = open(file_path, "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, fmt, *args):
+            return
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 8767), Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        page = await browser.new_page(viewport={"width": 1280, "height": 720})
+        await page.goto("http://127.0.0.1:8767/?live")
+        await page.wait_for_function(
+            "() => document.getElementById('screen').dataset.state === 'healthy'"
+        )
+        doc.update({
+            "state": "failed",
+            "service": "typerca",
+            "summary": "Replay gate failed: supported rate 52% (62/120), needs 70%",
+            "fix": "New test tests/test_grokdesk_demo.py sets the bar too high; fix or drop it",
+            "run_url": "https://github.com/mingleiw/typerca/actions/runs/38377473690",
+            "updated_at": "2026-10-13T09:47:00Z",
+        })
+        await page.evaluate("() => window.DeskSim.poll()")
+        await page.wait_for_function(
+            "() => document.getElementById('screen').dataset.state === 'failed'"
+        )
+        screen = await page.inner_text("#screen")
+        assert "52%" in screen and "Suggest:" in screen, screen
+        assert len(hits) >= 2, hits
+        stamps = []
+        for hit in hits:
+            assert "t=" in hit["path"], hit
+            assert "no-cache" in (hit["cache_control"] or "").lower(), hit
+            assert "no-cache" in (hit["pragma"] or "").lower(), hit
+            stamps.append(hit["path"].split("t=", 1)[1])
+        assert len(set(stamps)) == len(stamps), hits
+        print("cache bust ok", hits)
+        await page.close()
+    finally:
+        httpd.shutdown()
+
+
 async def main():
     server = subprocess.Popen(
         [sys.executable, "-m", "http.server", str(PORT), "--bind", "127.0.0.1"],
@@ -251,6 +351,7 @@ async def main():
                 executable_path=CHROME,
                 args=["--no-sandbox", "--disable-dev-shm-usage", "--headless=new"],
             )
+            await cache_bust(browser)
             page = await browser.new_page(viewport={"width": 1280, "height": 720})
             await demo(page)
             await live(page)

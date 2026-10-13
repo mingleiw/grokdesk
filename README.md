@@ -76,7 +76,7 @@ After that:
 - live simulator: `https://mingleiw.github.io/grokdesk/?live`
 - status file: `https://mingleiw.github.io/grokdesk/status.json`
 
-The firmware's default URL is that status file. Pages caches static files; both clients append a cache-busting query string so a new `updated_at` shows up on the next poll.
+The firmware's default URL is that status file. Pages sends `Cache-Control: max-age=600`, which made Safari keep showing the previous status. Live mode fetches `status.json?t=<Date.now()>` with `cache: 'no-store'` (and `Cache-Control: no-cache` on same-origin requests). The firmware appends `?t=<millis()>` and sends `Cache-Control: no-cache`.
 
 ## Run the simulator locally
 

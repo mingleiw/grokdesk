@@ -158,21 +158,29 @@ void poll() {
   HTTPClient http;
   WiFiClient plain;
   WiFiClientSecure secure;
-  const bool https = strncmp(STATUS_URL, "https://", 8) == 0;
+  // Pages responds Cache-Control: max-age=600 and ignores a stable URL.
+  // A new ?t= each poll plus Cache-Control: no-cache stops the client,
+  // and any cache that honors the request, from replaying the old body.
+  String url = STATUS_URL;
+  url += (url.indexOf('?') >= 0) ? "&t=" : "?t=";
+  url += String(millis());
+  const bool https = url.startsWith("https://");
   if (https) {
     secure.setInsecure();
-    if (!http.begin(secure, STATUS_URL)) {
+    if (!http.begin(secure, url)) {
       drawCentered("HTTP BEGIN", "failed", TFT_DARKGREY, TFT_WHITE);
       return;
     }
-  } else if (!http.begin(plain, STATUS_URL)) {
+  } else if (!http.begin(plain, url)) {
     drawCentered("HTTP BEGIN", "failed", TFT_DARKGREY, TFT_WHITE);
     return;
   }
+  http.addHeader("Cache-Control", "no-cache");
+  http.addHeader("Pragma", "no-cache");
   http.setTimeout(8000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   const int code = http.GET();
-  Serial.printf("GET %s -> %d\n", STATUS_URL, code);
+  Serial.printf("GET %s -> %d\n", url.c_str(), code);
   if (code == 200) {
     JsonDocument doc;
     const DeserializationError err = deserializeJson(doc, http.getStream());

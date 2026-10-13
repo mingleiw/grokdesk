@@ -62,7 +62,7 @@ Do not edit the TFT_eSPI library's `User_Setup.h`. `build_opt.h` in the sketch f
 | anything else | `UNKNOWN`. |
 | Wi-Fi down or HTTP error | `WIFI...` or `HTTP <code>`. |
 
-The device refetches every 5 seconds and redraws when `state`, `updated_at`, or `summary` changes. `run_url` is printed to Serial at 115200.
+The device refetches every 5 seconds. Each GET is `status.json?t=<millis()>` with `Cache-Control: no-cache`, so a `max-age=600` response is not reused. It redraws when `state`, `updated_at`, or `summary` changes. `run_url` is printed to Serial at 115200.
 
 HTTPS (the GitHub Pages default) uses `WiFiClientSecure::setInsecure()`, which does not check the server certificate. That call exists on Arduino-ESP32 2.x and 3.x, so the sketch builds in the Arduino IDE and on Wokwi. The file is public status and contains no secrets. A plain `http://` URL on the LAN skips TLS entirely.
 

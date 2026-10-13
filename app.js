@@ -120,12 +120,24 @@
     return v;
   }
 
+  function bustedStatusUrl(url) {
+    const abs = new URL(url, location.href);
+    // New query value every poll. GitHub Pages sends Cache-Control: max-age=600;
+    // Safari will reuse that response for the same URL unless the query changes.
+    abs.searchParams.set("t", String(Date.now()));
+    return abs;
+  }
+
   async function poll() {
     const url = liveUrl();
     const note = $("analysis-note");
-    const bust = url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+    const busted = bustedStatusUrl(url);
+    const sameOrigin = busted.origin === location.origin;
     try {
-      const res = await fetch(bust, { cache: "no-store" });
+      const res = await fetch(busted.href, {
+        cache: "no-store",
+        headers: sameOrigin ? { "Cache-Control": "no-cache", "Pragma": "no-cache" } : undefined,
+      });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       applyStatus(data);
