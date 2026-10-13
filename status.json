@@ -1,7 +1,8 @@
 {
-  "state": "resolved",
+  "state": "failed",
   "service": "typerca",
-  "summary": "CI passing again on PR #8: ReplayGate test is green",
-  "run_url": "https://github.com/mingleiw/typerca/actions/runs/38396797140",
-  "updated_at": "2026-10-13T12:32:38Z"
+  "summary": "agent.py verdict: inverted unresolved check flips verified gate",
+  "fix": "Restore if unresolved: in typerca/agent.py verdict()",
+  "run_url": "https://github.com/mingleiw/typerca/actions/runs/38452587848",
+  "updated_at": "2026-10-13T19:36:08Z"
 }
