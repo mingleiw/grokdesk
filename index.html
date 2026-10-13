@@ -3,16 +3,21 @@
 <head>
 <meta charset="utf-8">
 <title>grokdesk — deploy status display</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="stylesheet" href="style.css">
 <script>
-if (new URLSearchParams(location.search).has("live")) document.documentElement.classList.add("is-live");
+(function () {
+  var q = new URLSearchParams(location.search);
+  if (q.has("live")) document.documentElement.classList.add("is-live");
+  if (q.has("kiosk")) document.documentElement.classList.add("is-kiosk");
+})();
 </script>
 </head>
 <body>
 <div class="sim-tag" id="mode-tag">SIMULATED DATA</div>
 <main class="stage">
   <section class="desk">
+    <div class="fit">
     <div class="device" id="device">
       <div class="bezel">
         <div class="screen state-healthy" id="screen">
@@ -32,6 +37,7 @@ if (new URLSearchParams(location.search).has("live")) document.documentElement.c
       <div class="usb-port"></div>
     </div>
     <div class="cable"></div>
+    </div>
   </section>
   <aside class="logpanel">
     <div class="log-head"><span id="log-title">deploy log · checkout-api</span> <span class="badge" id="mode-badge">SIMULATED</span></div>

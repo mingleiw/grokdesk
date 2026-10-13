@@ -151,6 +151,92 @@ async def record(browser):
         print("ffmpeg missing; left .rec/raw.webm")
 
 
+VIEWPORTS = [(390, 844), (844, 390), (768, 1024), (1280, 720)]
+
+
+async def assert_fits(page, label, expect_log):
+    await page.wait_for_function(
+        "() => document.getElementById('scr-title').textContent.includes('DEPLOY HEALTHY')"
+    )
+    metrics = await page.evaluate(
+        """() => {
+          const doc = document.documentElement;
+          const title = document.getElementById('scr-title');
+          const range = document.createRange();
+          range.selectNodeContents(title);
+          const box = range.getBoundingClientRect();
+          const screen = document.getElementById('screen').getBoundingClientRect();
+          const device = document.getElementById('device').getBoundingClientRect();
+          const fully = box.width > 8 && box.height > 8
+            && box.left >= -0.5 && box.top >= -0.5
+            && box.right <= window.innerWidth + 0.5
+            && box.bottom <= window.innerHeight + 0.5
+            && box.left >= screen.left - 1
+            && box.right <= screen.right + 1
+            && box.top >= screen.top - 1
+            && box.bottom <= screen.bottom + 1;
+          return {
+            scrollWidth: doc.scrollWidth,
+            clientWidth: doc.clientWidth,
+            bodyScroll: document.body.scrollWidth,
+            bodyClient: document.body.clientWidth,
+            text: title.textContent,
+            fully,
+            box: {l: box.left, r: box.right, t: box.top, b: box.bottom, w: box.width, h: box.height},
+            screen: {l: screen.left, r: screen.right, w: screen.width, h: screen.height},
+            device: {w: device.width, h: device.height, l: device.left, r: device.right, t: device.top, b: device.bottom},
+            inner: [window.innerWidth, window.innerHeight],
+            logDisplay: getComputedStyle(document.querySelector('.logpanel')).display,
+            log: (() => {
+              const r = document.querySelector('.logpanel').getBoundingClientRect();
+              return {l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height};
+            })(),
+            viewportMeta: document.querySelector('meta[name=viewport]').content,
+          };
+        }"""
+    )
+    print(label, {k: metrics[k] for k in ("scrollWidth", "clientWidth", "text", "fully", "logDisplay", "device", "box")})
+    assert "width=device-width" in metrics["viewportMeta"], metrics["viewportMeta"]
+    assert metrics["scrollWidth"] <= metrics["clientWidth"] + 1, metrics
+    assert metrics["bodyScroll"] <= metrics["bodyClient"] + 1, metrics
+    assert metrics["text"] == "DEPLOY HEALTHY", metrics["text"]
+    assert metrics["fully"], metrics
+    dev = metrics["device"]
+    assert dev["l"] >= -1 and dev["t"] >= -1, metrics
+    assert dev["r"] <= metrics["inner"][0] + 1 and dev["b"] <= metrics["inner"][1] + 1, metrics
+    if expect_log is True:
+        assert metrics["logDisplay"] != "none", metrics
+        log = metrics["log"]
+        assert log["w"] > 40 and log["h"] > 40, metrics
+        assert log["l"] >= -1 and log["t"] >= -1, metrics
+        assert log["r"] <= metrics["inner"][0] + 1 and log["b"] <= metrics["inner"][1] + 1, metrics
+    elif expect_log is False:
+        assert metrics["logDisplay"] == "none", metrics
+
+
+async def viewports(browser):
+    for width, height in VIEWPORTS:
+        for mode in ("demo", "live"):
+            page = await browser.new_page(viewport={"width": width, "height": height})
+            query = "?live" if mode == "live" else ""
+            await page.goto(URL + query)
+            if mode == "live":
+                await page.wait_for_function(
+                    "() => document.getElementById('screen').dataset.state === 'healthy'"
+                )
+            narrow = width <= 900
+            expect_log = False if (mode == "live" and narrow) else True
+            await assert_fits(page, f"{mode} {width}x{height}", expect_log)
+            await shot(page, f"viewport/{mode}-{width}x{height}.png")
+            await page.close()
+        # kiosk on a phone hides the log the same way live does
+        if width <= 900:
+            page = await browser.new_page(viewport={"width": width, "height": height})
+            await page.goto(URL + "?kiosk")
+            await assert_fits(page, f"kiosk {width}x{height}", False)
+            await page.close()
+
+
 async def main():
     server = subprocess.Popen(
         [sys.executable, "-m", "http.server", str(PORT), "--bind", "127.0.0.1"],
@@ -168,7 +254,11 @@ async def main():
             page = await browser.new_page(viewport={"width": 1280, "height": 720})
             await demo(page)
             await live(page)
+            await page.close()
+            await viewports(browser)
             await browser.close()
+            if os.environ.get("GROKDESK_SKIP_RECORD") == "1":
+                return
             browser = await p.chromium.launch(
                 executable_path=CHROME,
                 args=["--no-sandbox", "--disable-dev-shm-usage", "--headless=new"],
