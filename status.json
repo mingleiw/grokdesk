@@ -1,8 +1,8 @@
 {
-  "state": "healthy",
-  "service": "checkout-api",
-  "summary": "Rollout complete. 3/3 pods ready.",
-  "fix": "",
-  "run_url": "https://github.com/mingleiw/grokdesk/actions",
-  "updated_at": "2026-10-13T09:13:40Z"
+  "state": "failed",
+  "service": "typerca",
+  "summary": "Replay gate failed: supported rate 52% (62/120), needs 70%",
+  "fix": "New test tests/test_grokdesk_demo.py sets the bar too high; fix or drop it",
+  "run_url": "https://github.com/mingleiw/typerca/actions/runs/38377473690",
+  "updated_at": "2026-10-13T09:47:00Z"
 }
