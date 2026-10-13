@@ -1,8 +1,7 @@
 {
-  "state": "failed",
+  "state": "resolved",
   "service": "typerca",
-  "summary": "agent.py verdict: inverted unresolved check flips verified gate",
-  "fix": "Restore if unresolved: in typerca/agent.py verdict()",
-  "run_url": "https://github.com/mingleiw/typerca/actions/runs/38452587848",
-  "updated_at": "2026-10-13T19:36:08Z"
+  "summary": "CI green on PR #8 after agent.py verdict fix",
+  "run_url": "https://github.com/mingleiw/typerca/actions/runs/38456472310",
+  "updated_at": "2026-10-13T19:44:20Z"
 }
