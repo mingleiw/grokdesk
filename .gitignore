@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.rec/
+.DS_Store
+node_modules/
+.cache/
+
+# Arduino build output and local WiFi credentials
+firmware/grokdesk/build/
+firmware/grokdesk/secrets.h

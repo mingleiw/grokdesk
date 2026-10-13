@@ -1,0 +1,8 @@
+{
+  "state": "exploded",
+  "service": "checkout-api",
+  "summary": "This state is not in the contract.",
+  "fix": "",
+  "run_url": "",
+  "updated_at": "2026-10-13T00:00:00Z"
+}
