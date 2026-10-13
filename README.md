@@ -101,6 +101,8 @@ Open the page through the local server or Pages. `file://` cannot fetch `status.
 
 Live mode replaces the simulated log with the six status fields, swaps the yellow **SIMULATED** badge for a green **LIVE** badge, and hides the demo buttons. The demo is unchanged when `live` is absent.
 
+The enclosure keeps a 4:3 aspect ratio and scales to the space it is given, so a phone in portrait or landscape shows the whole panel with the headline intact. Under 900px wide, live mode and `?kiosk` hide the log panel. Demo mode keeps the log, stacked under the device when the window is under 700px wide.
+
 ## Hardware
 
 The no-solder option is an **ESP32-2432S028**, sold as the "Cheap Yellow Display": ESP32 and a 2.8" ILI9341 on one board, powered over USB.
