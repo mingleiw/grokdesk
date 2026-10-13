@@ -1,0 +1,7 @@
+# Wokwi for VS Code / wokwi-cli. wokwi.com compiles the sketch itself
+# (libraries.txt + build_opt.h). Build the binaries this file points at with:
+#   firmware/compile.sh
+[wokwi]
+version = 1
+firmware = 'build/grokdesk.ino.bin'
+elf = 'build/grokdesk.ino.elf'

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>grokdesk — deploy status display</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<script>
+if (new URLSearchParams(location.search).has("live")) document.documentElement.classList.add("is-live");
+</script>
+</head>
+<body>
+<div class="sim-tag" id="mode-tag">SIMULATED DATA</div>
+<main class="stage">
+  <section class="desk">
+    <div class="device" id="device">
+      <div class="bezel">
+        <div class="screen state-healthy" id="screen">
+          <div class="scr-top"><span id="scr-clock">--:--</span><span class="scr-brand">GROKDESK</span><span class="wifi">◉ WiFi</span></div>
+          <div class="scr-body">
+            <div class="scr-icon" id="scr-icon">✔</div>
+            <div class="scr-title" id="scr-title">DEPLOY HEALTHY</div>
+            <div class="scr-sub" id="scr-sub">checkout-api v2.14.0</div>
+            <div class="scr-explain" id="scr-explain"></div>
+          </div>
+          <div class="scr-foot"><span>grokdesk</span><span id="scr-foot-r">sim</span></div>
+          <div class="scanlines"></div>
+        </div>
+      </div>
+      <div class="led" id="led" title="status LED"></div>
+      <div class="label-plate">GROKDESK</div>
+      <div class="usb-port"></div>
+    </div>
+    <div class="cable"></div>
+  </section>
+  <aside class="logpanel">
+    <div class="log-head"><span id="log-title">deploy log · checkout-api</span> <span class="badge" id="mode-badge">SIMULATED</span></div>
+    <pre id="log"></pre>
+    <div class="log-foot" id="analysis-note">Analysis: simulated, rule-based (analyzer.js) — no external API</div>
+  </aside>
+</main>
+<nav class="controls" id="controls">
+  <button data-state="healthy">1 · Healthy</button>
+  <button data-state="failed">2 · Failed</button>
+  <button data-state="explained">3 · Grok Bot analyze</button>
+  <button data-state="resolved">4 · Resolved</button>
+  <button id="auto" class="auto">▶ Auto demo</button>
+</nav>
+<script src="logs.js"></script>
+<script src="analyzer.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

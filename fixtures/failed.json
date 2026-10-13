@@ -1,0 +1,8 @@
+{
+  "state": "failed",
+  "service": "checkout-api",
+  "summary": "DB migration 0042 timed out - lock on orders table. Pods crash-looping.",
+  "fix": "Rollback to v2.14.0",
+  "run_url": "https://github.com/mingleiw/grokdesk/actions/runs/4820",
+  "updated_at": "2026-10-13T10:08:06Z"
+}
