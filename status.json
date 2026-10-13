@@ -1,7 +1,8 @@
 {
-  "state": "resolved",
+  "state": "failed",
   "service": "typerca",
-  "summary": "CI passing again on PR #8; replay gate back above 70%",
-  "run_url": "https://github.com/mingleiw/typerca/actions/runs/38390068277",
-  "updated_at": "2026-10-13T12:05:49Z"
+  "summary": "ReplayGate test failed: supported rate 62/120 (0.52) below 0.70 gate",
+  "fix": "Restore replay gate threshold to 0.50 in tests/test_grokdesk_demo.py",
+  "run_url": "https://github.com/mingleiw/typerca/actions/runs/38395134571",
+  "updated_at": "2026-10-13T12:20:20Z"
 }
