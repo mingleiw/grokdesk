@@ -1,5 +1,7 @@
 # grokdesk hardware
 
+The desk display to build is the Waveshare ESP32-S3-Touch-LCD-4.3B PlatformIO project in this directory (`platformio.ini`, 800×480). Flash and Wi-Fi setup are in the repo README. This file is the earlier ESP32 + ILI9341 / Wokwi sketch.
+
 The firmware in `grokdesk/grokdesk.ino` polls the same `status.json` document as the browser simulator (see the schema in the repo README). Default URL:
 
 ```

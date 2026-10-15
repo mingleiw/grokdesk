@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GrokDesk flasher</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #14181f; color: #eaffef;
+    font: 18px/1.45 "Segoe UI", system-ui, sans-serif;
+  }
+  main { width: min(640px, calc(100% - 32px)); padding: 28px 0 48px; }
+  h1 { font-size: 32px; margin: 0 0 8px; }
+  .lede { color: #b7c4be; margin: 0 0 22px; }
+  .card {
+    background: #0d8a3a; color: #eaffef; border-radius: 16px;
+    padding: 22px 22px 18px; box-shadow: 0 16px 40px rgba(0,0,0,.35);
+  }
+  .card p { margin: 0 0 14px; }
+  esp-web-install-button button, .card button {
+    font: 700 18px/1 system-ui; padding: 14px 18px; border: 0; border-radius: 10px;
+    background: #eaffef; color: #063; cursor: pointer;
+  }
+  ol { margin: 18px 0 0; padding-left: 22px; color: #d5e4ff; }
+  li { margin: 8px 0; }
+  a { color: #9fd0ff; }
+  code { font-family: ui-monospace, monospace; font-size: 0.92em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>GrokDesk</h1>
+  <p class="lede">Flash the Waveshare ESP32-S3-Touch-LCD-4.3B. Chrome or Edge, desktop, USB-C.</p>
+  <div class="card">
+    <p>The image is bootloader, partition table, and app in one file, written at offset 0.</p>
+    <esp-web-install-button manifest="./manifest.json">
+      <button slot="activate">Install GrokDesk</button>
+      <span slot="unsupported">This browser cannot flash over USB. Use Chrome or Edge on a computer.</span>
+      <span slot="not-allowed">Web flashing needs a secure page. Open this from GitHub Pages, not a downloaded file.</span>
+    </esp-web-install-button>
+  </div>
+  <ol>
+    <li>Plug the board in with a data USB-C cable.</li>
+    <li>Click Install and pick the serial port (USB JTAG/serial or a similar name).</li>
+    <li>If no port appears, hold <strong>BOOT</strong>, tap <strong>RESET</strong> or replug USB, then release BOOT.</li>
+    <li>After it reboots, join the Wi-Fi network <code>GrokDesk-Setup</code> and use the captive portal. A flash clears saved Wi-Fi.</li>
+  </ol>
+  <p class="lede">Simulator and status stay at <a href="../">the grokdesk site</a>.</p>
+</main>
+</body>
+</html>
