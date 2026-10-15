@@ -1,0 +1,86 @@
+name: Firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware.yml"
+  pull_request:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware.yml"
+
+# Pages for this repo is "Deploy from a branch" / main / root (legacy).
+# This workflow does not switch that source. It builds the merged image and,
+# on main, commits flash/ so the existing site gains /flash/ beside the simulator.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+          key: pio-${{ hashFiles('firmware/platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv
+          pip install "platformio==6.2.0"
+
+      - name: Build merged firmware
+        run: bash firmware/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grokdesk-flash
+          path: |
+            flash/grokdesk.bin
+            flash/manifest.json
+            flash/index.html
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: grokdesk-flash
+          path: flash
+
+      - name: Commit flasher onto main
+        run: |
+          git config user.name "Minglei Wang"
+          git config user.email "mingleiw@users.noreply.github.com"
+          git add flash/grokdesk.bin flash/manifest.json flash/index.html
+          if git diff --cached --quiet; then
+            echo "flasher unchanged"
+            exit 0
+          fi
+          git commit -m "Publish GrokDesk web flasher under /flash/." \
+            -m "Signed-off-by: Minglei Wang <mingleiw@users.noreply.github.com>"
+          git push origin HEAD:main

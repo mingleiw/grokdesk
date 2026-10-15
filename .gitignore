@@ -12,3 +12,4 @@ node_modules/
 # Arduino build output and local WiFi credentials
 firmware/grokdesk/build/
 firmware/grokdesk/secrets.h
+.pio/
