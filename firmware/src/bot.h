@@ -32,3 +32,7 @@ void botSet(BotMood mood, uint16_t bg);
 // Draws the frame for `now` into the panel framebuffer without flushing the cache.
 // Returns false when the bot is hidden or not allocated.
 bool botDraw(uint32_t now);
+
+// Boot screen: only a big Grok Bot on the light backdrop of the mark. It pops in
+// asleep, wakes, looks around and hops. Blocks for `durationMs`.
+void botSplash(uint32_t durationMs);

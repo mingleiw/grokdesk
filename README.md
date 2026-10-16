@@ -126,6 +126,8 @@ It polls `https://raw.githubusercontent.com/mingleiw/grokdesk/main/status.json` 
 
 ### Grok Bot
 
+On power-up or reset, the panel first shows only a big Grok Bot on a light backdrop for about 4.6 s (`SPLASH_MS` in `board_config.h`). It pops in asleep, wakes, looks around and hops, then Wi-Fi setup starts.
+
 The status screens keep their text on the left. On the right, Grok Bot (a black orb with two slanted eyes) is animated at about 25 fps, with a movement for each state:
 
 | Screen | Grok Bot |

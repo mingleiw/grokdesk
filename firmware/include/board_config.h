@@ -70,5 +70,6 @@
 #endif
 
 #define POLL_MS 30000UL
+#define SPLASH_MS 4600UL
 #define LONG_PRESS_MS 3000UL
 #define AP_NAME "GrokDesk-Setup"
