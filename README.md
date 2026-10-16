@@ -124,6 +124,22 @@ It polls `https://raw.githubusercontent.com/mingleiw/grokdesk/main/status.json` 
 | no status yet, or Wi-Fi still connecting | `OFFLINE` / `CONNECTING`. |
 | a later fetch fails | The last screen stays up, with an amber `STALE` mark and `no WiFi` when the radio is down. |
 
+### Grok Bot
+
+The status screens keep their text on the left. On the right, Grok Bot (a black orb with two slanted eyes) is animated at about 25 fps, with a movement for each state:
+
+| Screen | Grok Bot |
+|---|---|
+| `healthy` | Bobs slowly, glances around, blinks. |
+| `resolved` | Hops, with happy closed eyes. |
+| `analyzing` | Eyes scan side to side; three dots pulse above it. |
+| `failed` with explanation | Looks down at the explanation and shakes now and then. |
+| `failed` without explanation | Wide eyes, frequent shakes. |
+| unknown state | Looks up from side to side under a `?`. |
+| `OFFLINE` | Eyes closed, `z` drifting up. |
+
+The sprite is drawn off-screen in PSRAM (`firmware/src/bot.cpp`) and copied into the panel's frame each frame, so it does not flicker. It pauses while a status fetch is in flight (usually about a second every 30 s). The Wi-Fi setup and `CONNECTING` screens have no bot.
+
 The top bar is the UTC clock (from NTP), `GROKDESK`, and the Wi-Fi mark. The footer is `grokdesk` and `upd HH:MM` from `updated_at`. `run_url` is printed at 115200 and, on the failed explanation, as a short line.
 
 ### Flash from the browser

@@ -20,6 +20,7 @@
 #include <time.h>
 
 #include "board_config.h"
+#include "bot.h"
 #include "panel.h"
 
 struct DeskStatus {
@@ -71,13 +72,16 @@ static uint16_t darken(uint16_t c) {
 
 static int charWidth(int size) { return 6 * size; }
 
-static void drawCentered(const char *text, int y, int size, uint16_t color) {
+// Status screens keep their text left of the Grok Bot stage.
+static constexpr int TEXT_W = BOT_STAGE_X;
+
+static void drawCentered(const char *text, int y, int size, uint16_t color, int areaW = LCD_W) {
   Arduino_GFX *gfx = panelGfx();
   gfx->setTextSize(size);
   gfx->setTextColor(color);
   gfx->setTextWrap(false);
   const int w = static_cast<int>(strlen(text)) * charWidth(size);
-  int x = (LCD_W - w) / 2;
+  int x = (areaW - w) / 2;
   if (x < 12) x = 12;
   gfx->setCursor(x, y);
   gfx->print(text);
@@ -176,6 +180,7 @@ static void render() {
   gfx->setTextWrap(false);
 
   if (portalUp) {
+    botSet(BotMood::Hidden, COL_DARK);
     gfx->fillScreen(COL_DARK);
     drawChrome(COL_DARK, COL_WHITE, "");
     drawCentered("WI-FI SETUP", 120, 5, COL_WHITE);
@@ -184,40 +189,46 @@ static void render() {
     drawCentered("Open the page it offers.", 330, 3, COL_WHITE);
     drawCentered("Hold the screen 3s to reset Wi-Fi.", 390, 2, COL_DIM);
   } else if (!wifiUp && !status.ok) {
+    botSet(BotMood::Hidden, COL_ERR);
     gfx->fillScreen(COL_ERR);
     drawChrome(COL_ERR, COL_ERR_TEXT, "");
     drawCentered("CONNECTING", 170, 5, COL_ERR_TEXT);
     drawCentered("Looking for saved Wi-Fi", 260, 3, COL_WHITE);
   } else if (!status.ok) {
+    botSet(BotMood::Sleepy, COL_ERR);
     gfx->fillScreen(COL_ERR);
     drawChrome(COL_ERR, COL_ERR_TEXT, "");
-    drawCentered("OFFLINE", 150, 6, COL_ERR_TEXT);
-    drawWrapped(staleReason.length() ? staleReason : "status.json unreachable", 40, 250, LCD_W - 80, 3, COL_WHITE,
+    drawCentered("OFFLINE", 150, 6, COL_ERR_TEXT, TEXT_W);
+    drawWrapped(staleReason.length() ? staleReason : "status.json unreachable", 40, 250, TEXT_W - 72, 3, COL_WHITE,
                 400);
   } else if (status.state == "healthy") {
+    botSet(BotMood::Calm, COL_OK);
     gfx->fillScreen(COL_OK);
     const String sub = status.summary.length() ? status.summary : status.service;
     const String foot = String("upd ") + hhmmFromIso(status.updated);
     drawChrome(COL_OK, COL_OK_TEXT, foot.c_str());
-    drawCentered("DEPLOY HEALTHY", 150, 5, COL_OK_TEXT);
-    if (sub.length() * charWidth(3) < LCD_W - 48) drawCentered(sub.c_str(), 250, 3, COL_OK_TEXT);
-    else drawWrapped(sub, 32, 240, LCD_W - 64, 3, COL_OK_TEXT, 400);
+    drawCentered("DEPLOY HEALTHY", 150, 5, COL_OK_TEXT, TEXT_W);
+    if (sub.length() * charWidth(3) < TEXT_W - 48) drawCentered(sub.c_str(), 250, 3, COL_OK_TEXT, TEXT_W);
+    else drawWrapped(sub, 32, 240, TEXT_W - 48, 3, COL_OK_TEXT, 400);
   } else if (status.state == "resolved") {
+    botSet(BotMood::Happy, COL_OK);
     gfx->fillScreen(COL_OK);
     const String sub = status.summary.length() ? status.summary : (status.service.length() ? status.service : "Fixed");
     const String foot = String("upd ") + hhmmFromIso(status.updated);
     drawChrome(COL_OK, COL_OK_TEXT, foot.c_str());
-    drawCentered("RESOLVED", 150, 6, COL_OK_TEXT);
-    if (sub.length() * charWidth(3) < LCD_W - 48) drawCentered(sub.c_str(), 270, 3, COL_OK_TEXT);
-    else drawWrapped(sub, 32, 260, LCD_W - 64, 3, COL_OK_TEXT, 400);
+    drawCentered("RESOLVED", 150, 6, COL_OK_TEXT, TEXT_W);
+    if (sub.length() * charWidth(3) < TEXT_W - 48) drawCentered(sub.c_str(), 270, 3, COL_OK_TEXT, TEXT_W);
+    else drawWrapped(sub, 32, 260, TEXT_W - 48, 3, COL_OK_TEXT, 400);
   } else if (status.state == "analyzing") {
+    botSet(BotMood::Thinking, COL_DARK);
     gfx->fillScreen(COL_DARK);
     const String foot = String("upd ") + hhmmFromIso(status.updated);
     drawChrome(COL_DARK, COL_WHITE, foot.c_str());
-    drawCentered("Grok Bot analyzing...", 140, 4, COL_WHITE);
+    drawCentered("Grok Bot analyzing...", 140, 4, COL_WHITE, TEXT_W);
     const String sub = status.summary.length() ? status.summary : status.service;
-    drawWrapped(sub, 32, 230, LCD_W - 64, 3, COL_GROK, 400);
+    drawWrapped(sub, 32, 230, TEXT_W - 48, 3, COL_GROK, 400);
   } else if (status.state == "failed" && (status.summary.length() || status.fix.length())) {
+    botSet(BotMood::Worried, COL_DARK);
     gfx->fillScreen(COL_DARK);
     const String foot = String("upd ") + hhmmFromIso(status.updated);
     drawChrome(COL_DARK, COL_WHITE, foot.c_str());
@@ -238,7 +249,7 @@ static void render() {
     gfx->setCursor(28, y);
     gfx->print("Grok Bot:");
     y += 36;
-    if (status.summary.length()) y = drawWrapped(status.summary, 28, y, LCD_W - 56, 3, COL_WHITE, 360);
+    if (status.summary.length()) y = drawWrapped(status.summary, 28, y, TEXT_W - 44, 3, COL_WHITE, 360);
     if (status.fix.length()) {
       y += 6;
       gfx->setTextSize(3);
@@ -246,29 +257,33 @@ static void render() {
       gfx->setCursor(28, y);
       gfx->print("Suggest:");
       y += 36;
-      y = drawWrapped(status.fix, 28, y, LCD_W - 56, 3, COL_FIX, 400);
+      y = drawWrapped(status.fix, 28, y, TEXT_W - 44, 3, COL_FIX, 400);
     }
     if (status.runUrl.length() && y < 400) {
       String url = status.runUrl;
-      if (url.length() > 62) url = url.substring(url.length() - 62);
+      const unsigned maxUrl = (TEXT_W - 44) / charWidth(2);
+      if (url.length() > maxUrl) url = url.substring(url.length() - maxUrl);
       gfx->setTextSize(2);
       gfx->setTextColor(COL_DIM);
       gfx->setCursor(28, min(y + 8, 404));
       gfx->print(url);
     }
   } else if (status.state == "failed") {
+    botSet(BotMood::Alarmed, COL_FAIL);
     gfx->fillScreen(COL_FAIL);
     const String foot = String("upd ") + hhmmFromIso(status.updated);
     drawChrome(COL_FAIL, COL_WHITE, foot.c_str());
-    drawCentered("DEPLOY FAILED", 160, 5, COL_WHITE);
-    if (status.service.length()) drawCentered(status.service.c_str(), 250, 3, COL_WHITE);
+    drawCentered("DEPLOY FAILED", 160, 5, COL_WHITE, TEXT_W);
+    if (status.service.length()) drawCentered(status.service.c_str(), 250, 3, COL_WHITE, TEXT_W);
   } else {
+    botSet(BotMood::Puzzled, COL_ERR);
     gfx->fillScreen(COL_ERR);
     const String foot = String("upd ") + hhmmFromIso(status.updated);
     drawChrome(COL_ERR, COL_ERR_TEXT, foot.c_str());
-    drawCentered("UNKNOWN STATE", 160, 4, COL_ERR_TEXT);
-    drawCentered(status.state.length() ? status.state.c_str() : "(missing)", 240, 3, COL_WHITE);
+    drawCentered("UNKNOWN STATE", 160, 4, COL_ERR_TEXT, TEXT_W);
+    drawCentered(status.state.length() ? status.state.c_str() : "(missing)", 240, 3, COL_WHITE, TEXT_W);
   }
+  botDraw(millis());
   gfx->flush();
   strncpy(clockDrawn, clockText, sizeof(clockDrawn) - 1);
   clockDrawn[sizeof(clockDrawn) - 1] = '\0';
@@ -445,6 +460,7 @@ void setup() {
     Serial.println("panel init failed");
     while (true) delay(1000);
   }
+  botBegin(panelGfx());
 
   wm.setDebugOutput(true, WM_DEBUG_NOTIFY);
   wm.setConfigPortalBlocking(false);
@@ -500,5 +516,13 @@ void loop() {
   refreshClock();
   if (strcmp(clockText, clockDrawn) != 0) render();
 
-  delay(20);
+  // The bot freezes while a status fetch blocks, then picks up where the clock is.
+  static uint32_t lastFrame = 0;
+  const uint32_t now = millis();
+  if (now - lastFrame >= BOT_FRAME_MS) {
+    lastFrame = now;
+    if (botDraw(now)) panelGfx()->flush();
+  }
+
+  delay(10);
 }
