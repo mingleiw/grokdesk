@@ -461,6 +461,7 @@ void setup() {
     while (true) delay(1000);
   }
   botBegin(panelGfx());
+  botSplash(SPLASH_MS);
 
   wm.setDebugOutput(true, WM_DEBUG_NOTIFY);
   wm.setConfigPortalBlocking(false);

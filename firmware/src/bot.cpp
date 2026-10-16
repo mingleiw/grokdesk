@@ -4,18 +4,17 @@
 #include <esp_heap_caps.h>
 #include <math.h>
 
+#include "board_config.h"
+
 namespace {
 
 constexpr float TAU_F = 6.2831853f;
 constexpr float PI_F = 3.1415927f;
 
-// Orb geometry inside the stage. Eye offsets and sizes are fractions of R,
-// measured from the Grok Bot mark: two capsules up and right of center,
-// tilted so the top leans left.
-constexpr float R = 62.0f;
-constexpr float CX = BOT_STAGE_W / 2.0f;
-constexpr float GROUND = 200.0f;
-constexpr float REST_CY = GROUND - R - 6.0f;
+// Eye offsets and sizes are fractions of the orb radius, measured from the
+// Grok Bot mark: two capsules up and right of center, tilted so the top leans left.
+// Poses are written for the status stage (radius 62) and scale with the radius.
+constexpr float BASE_R = 62.0f;
 constexpr float EYE_AX = 0.431f, EYE_AY = 0.902f;
 constexpr float EYE_X[2] = {0.21f, 0.63f};
 constexpr float EYE_Y[2] = {-0.42f, -0.49f};
@@ -27,18 +26,27 @@ constexpr uint16_t ORB = 0x0841;  // #0a0a0c, as in the mark
 constexpr uint16_t WHITE = 0xFFFF;
 constexpr uint16_t GROK = 0x7E9F;   // #7fd0ff
 constexpr uint16_t AMBER = 0xFE60;  // #ffcc00
+constexpr uint16_t SPLASH_BG = 0xF79E;  // #f4f4f6, the mark's backdrop
 
 // Sprite whose framebuffer lives in PSRAM; internal RAM is left for Wi-Fi and TLS.
 // Arduino_Canvas::begin() only allocates when _framebuffer is still null.
 class Sprite : public Arduino_Canvas {
  public:
-  explicit Sprite(Arduino_G *out) : Arduino_Canvas(BOT_STAGE_W, BOT_STAGE_H, out, BOT_STAGE_X, BOT_STAGE_Y) {
-    _framebuffer = static_cast<uint16_t *>(
-        heap_caps_malloc(BOT_STAGE_W * BOT_STAGE_H * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  Sprite(Arduino_G *out, int16_t w, int16_t h, int16_t x, int16_t y) : Arduino_Canvas(w, h, out, x, y) {
+    _framebuffer = static_cast<uint16_t *>(heap_caps_malloc(w * h * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   }
 };
 
-Sprite *sprite = nullptr;
+// A sprite plus where the orb sits in it.
+struct Stage {
+  Sprite *sprite;
+  int w, h;
+  float r, cx, ground;
+  float restCy() const { return ground - r - 6 * r / BASE_R; }
+};
+
+Stage stage = {nullptr, BOT_STAGE_W, BOT_STAGE_H, BASE_R, BOT_STAGE_W / 2.0f, 200.0f};
+Arduino_GFX *panel = nullptr;
 BotMood mood = BotMood::Hidden;
 uint16_t bg = 0;
 
@@ -89,28 +97,39 @@ float luma(uint16_t c) {
   return 0.299f * ((c >> 11) << 3) + 0.587f * (((c >> 5) & 0x3F) << 2) + 0.114f * ((c & 0x1F) << 3);
 }
 
-void plot(uint16_t *fb, int x, int y, uint16_t color, float coverage) {
-  if (coverage <= 0 || x < 0 || y < 0 || x >= BOT_STAGE_W || y >= BOT_STAGE_H) return;
-  uint16_t &px = fb[y * BOT_STAGE_W + x];
+void plot(const Stage &st, int x, int y, uint16_t color, float coverage) {
+  if (coverage <= 0 || x < 0 || y < 0 || x >= st.w || y >= st.h) return;
+  uint16_t &px = st.sprite->getFramebuffer()[y * st.w + x];
   px = coverage >= 1 ? color : blend(px, color, coverage);
 }
 
-// Anti-aliased filled ellipse.
-void ellipse(uint16_t *fb, float cx, float cy, float rx, float ry, uint16_t color) {
+// Anti-aliased filled ellipse. Each row's interior is filled solid; only the
+// two edge runs are shaded per pixel, which keeps the big splash orb cheap.
+void ellipse(const Stage &st, float cx, float cy, float rx, float ry, uint16_t color) {
   if (rx <= 0 || ry <= 0) return;
   const float m = rx < ry ? rx : ry;
+  uint16_t *fb = st.sprite->getFramebuffer();
   for (int y = static_cast<int>(cy - ry - 1); y <= static_cast<int>(cy + ry + 1); y++) {
+    if (y < 0 || y >= st.h) continue;
     const float ny = (y + 0.5f - cy) / ry;
+    // Solid run: pixels whose centers sit inside the ellipse shrunk by 3 px.
+    const float iny = (y + 0.5f - cy) / (ry - 3.0f);
+    const float span = ry > 3.0f && rx > 3.0f && iny * iny < 1 ? (rx - 3.0f) * sqrtf(1 - iny * iny) : 0;
+    const int solidL = static_cast<int>(ceilf(cx - span - 0.5f)), solidR = static_cast<int>(floorf(cx + span - 0.5f)) + 1;
     for (int x = static_cast<int>(cx - rx - 1); x <= static_cast<int>(cx + rx + 1); x++) {
+      if (x >= solidL && x < solidR) {
+        if (x >= 0 && x < st.w) fb[y * st.w + x] = color;
+        continue;
+      }
       const float nx = (x + 0.5f - cx) / rx;
       const float d = (sqrtf(nx * nx + ny * ny) - 1) * m;
-      plot(fb, x, y, color, clamp01(0.5f - d));
+      plot(st, x, y, color, clamp01(0.5f - d));
     }
   }
 }
 
 // Anti-aliased capsule: segment of half-length h along (ax, ay), radius r.
-void capsule(uint16_t *fb, float cx, float cy, float ax, float ay, float h, float r, uint16_t color) {
+void capsule(const Stage &st, float cx, float cy, float ax, float ay, float h, float r, uint16_t color) {
   const float ex = fabsf(ax) * h + r + 1, ey = fabsf(ay) * h + r + 1;
   for (int y = static_cast<int>(cy - ey); y <= static_cast<int>(cy + ey); y++) {
     for (int x = static_cast<int>(cx - ex); x <= static_cast<int>(cx + ex); x++) {
@@ -118,13 +137,13 @@ void capsule(uint16_t *fb, float cx, float cy, float ax, float ay, float h, floa
       float t = px * ax + py * ay;
       t = t < -h ? -h : (t > h ? h : t);
       const float qx = px - ax * t, qy = py - ay * t;
-      plot(fb, x, y, color, clamp01(0.5f - (sqrtf(qx * qx + qy * qy) - r)));
+      plot(st, x, y, color, clamp01(0.5f - (sqrtf(qx * qx + qy * qy) - r)));
     }
   }
 }
 
 // Upper half of a ring: a happy, closed eye.
-void arcUp(uint16_t *fb, float cx, float cy, float rad, float thick, uint16_t color) {
+void arcUp(const Stage &st, float cx, float cy, float rad, float thick, uint16_t color) {
   for (int y = static_cast<int>(cy - rad - thick - 1); y <= static_cast<int>(cy + thick); y++) {
     for (int x = static_cast<int>(cx - rad - thick - 1); x <= static_cast<int>(cx + rad + thick + 1); x++) {
       const float px = x + 0.5f - cx, py = y + 0.5f - cy;
@@ -135,7 +154,7 @@ void arcUp(uint16_t *fb, float cx, float cy, float rad, float thick, uint16_t co
         const float ex = px < 0 ? px + rad : px - rad;
         d = sqrtf(ex * ex + py * py) - thick;
       }
-      plot(fb, x, y, color, clamp01(0.5f - d));
+      plot(st, x, y, color, clamp01(0.5f - d));
     }
   }
 }
@@ -215,7 +234,40 @@ Pose poseFor(uint32_t now) {
   return p;
 }
 
-void drawEyes(uint16_t *fb, const Pose &p, float cx, float cy) {
+// Boot splash, `t` ms in: pop in asleep, wake, look around, hop twice.
+Pose splashPose(uint32_t t) {
+  static const Look keys[] = {{0, 0}, {-1, 0.25f}, {0.4f, -0.35f}, {0, 0}};
+  Pose p;
+  if (t < 450) {  // pop in with a little overshoot
+    const float k = ease(t / 450.0f);
+    const float s = 0.2f + 0.8f * k + 0.12f * sinf(PI_F * k);
+    p.sx = p.sy = s;
+  }
+  if (t < 900) {
+    p.blink = 1;
+    p.sy *= 1 + 0.03f * wave(t, 900);
+  } else if (t < 1100) {
+    p.blink = 1 - (t - 900) / 200.0f;
+  } else if (t < 3100) {
+    const Look l = lookPath(t - 1100, keys, 4, 500);
+    p.lookX = l.x;
+    p.lookY = l.y;
+    if (t > 2900 && t < 3080) p.blink = 1 - fabsf((t - 2900) / 90.0f - 1);
+  } else {
+    const float h = static_cast<float>((t - 3100) % 600) / 600.0f;
+    p.lift = 34 * sinf(PI_F * h);
+    if (p.lift < 5) {
+      const float k = 1 - p.lift / 5;
+      p.sx = 1 + 0.07f * k;
+      p.sy = 1 - 0.07f * k;
+    }
+    p.lookY = -0.2f;
+  }
+  return p;
+}
+
+void drawEyes(const Stage &st, const Pose &p, float cx, float cy) {
+  const float R = st.r;
   const float lx = p.lookX < -1 ? -1 : (p.lookX > 0.4f ? 0.4f : p.lookX);
   for (int i = 0; i < 2; i++) {
     float ox = EYE_X[i] + lx * 0.33f;
@@ -229,24 +281,25 @@ void drawEyes(uint16_t *fb, const Pose &p, float cx, float cy) {
     // Eyes nearer the rim are seen at an angle, so they read thinner.
     const float fore = powf(1 - rr * rr, 0.25f);
     const float ex = cx + ox * R * p.sx, ey = cy + oy * R * p.sy;
-    const float r = EYE_R * R * fore * p.eyeScale;
-    const float h = EYE_HALF * R * p.eyeScale;
+    const float r = EYE_R * R * fore * p.eyeScale * p.sx;
+    const float h = EYE_HALF * R * p.eyeScale * p.sy;
     if (p.happy) {
-      arcUp(fb, ex, ey + r * 0.5f, r * 1.25f, r * 0.42f, WHITE);
+      arcUp(st, ex, ey + r * 0.5f, r * 1.25f, r * 0.42f, WHITE);
     } else if (p.blink > 0.85f) {
-      capsule(fb, ex, ey + r * 0.4f, EYE_AY, -EYE_AX, r * 0.9f, r * 0.3f < 1.5f ? 1.5f : r * 0.3f, WHITE);
+      capsule(st, ex, ey + r * 0.4f, EYE_AY, -EYE_AX, r * 0.9f, r * 0.3f < 1.5f ? 1.5f : r * 0.3f, WHITE);
     } else {
-      capsule(fb, ex, ey, EYE_AX, EYE_AY, h * (1 - p.blink), r * (1 - 0.3f * p.blink), WHITE);
+      capsule(st, ex, ey, EYE_AX, EYE_AY, h * (1 - p.blink), r * (1 - 0.3f * p.blink), WHITE);
     }
   }
 }
 
-void drawExtras(uint32_t now, float cx, float top) {
-  uint16_t *fb = sprite->getFramebuffer();
+void drawExtras(const Stage &st, uint32_t now, float cx, float top) {
+  Sprite *sprite = st.sprite;
+  const float R = st.r;
   if (mood == BotMood::Thinking) {
     const int lit = static_cast<int>((now / 300) % 3);
     for (int i = 0; i < 3; i++) {
-      ellipse(fb, cx - 22 + 22 * i, top - 18, 5, 5, i == lit ? GROK : blend(bg, GROK, 0.35f));
+      ellipse(st, cx - 22 + 22 * i, top - 18, 5, 5, i == lit ? GROK : blend(bg, GROK, 0.35f));
     }
   } else if (mood == BotMood::Puzzled) {
     sprite->setTextSize(4);
@@ -264,17 +317,40 @@ void drawExtras(uint32_t now, float cx, float top) {
   }
 }
 
+// Shadow, orb and eyes for pose `p` on `background`. Pose offsets scale with the orb.
+void drawOrb(const Stage &st, const Pose &p, uint16_t background, float *outCx, float *outTop) {
+  const float k = st.r / BASE_R;
+  const float cx = st.cx + p.dx * k;
+  const float cy = st.restCy() - p.lift * k;
+  const float rx = st.r * p.sx, ry = st.r * p.sy;
+
+  st.sprite->fillScreen(background);
+  const float shrink = 1 - p.lift / 70;
+  ellipse(st, cx, st.ground + 4 * k, st.r * 0.78f * shrink * p.sx, 7 * k * shrink, blend(background, 0x0000, 0.35f));
+  // A black orb disappears on the dark screens, so it gets a thin blue rim there.
+  if (luma(background) < 40) {
+    ellipse(st, cx, cy, rx, ry, blend(background, GROK, 0.5f));
+    ellipse(st, cx, cy, rx - 3 * k, ry - 3 * k, ORB);
+  } else {
+    ellipse(st, cx, cy, rx, ry, ORB);
+  }
+  drawEyes(st, p, cx, cy);
+  *outCx = cx;
+  *outTop = cy - ry;
+}
+
 }  // namespace
 
 bool botBegin(Arduino_GFX *out) {
-  sprite = new Sprite(out);
-  if (!sprite->begin(GFX_SKIP_OUTPUT_BEGIN)) {
+  panel = out;
+  stage.sprite = new Sprite(out, BOT_STAGE_W, BOT_STAGE_H, BOT_STAGE_X, BOT_STAGE_Y);
+  if (!stage.sprite->begin(GFX_SKIP_OUTPUT_BEGIN)) {
     Serial.println("bot sprite allocation failed");
-    delete sprite;
-    sprite = nullptr;
+    delete stage.sprite;
+    stage.sprite = nullptr;
     return false;
   }
-  sprite->setTextWrap(false);
+  stage.sprite->setTextWrap(false);
   return true;
 }
 
@@ -284,25 +360,33 @@ void botSet(BotMood next, uint16_t background) {
 }
 
 bool botDraw(uint32_t now) {
-  if (!sprite || mood == BotMood::Hidden) return false;
-  uint16_t *fb = sprite->getFramebuffer();
-  const Pose p = poseFor(now);
-  const float cx = CX + p.dx;
-  const float cy = REST_CY - p.lift;
-  const float rx = R * p.sx, ry = R * p.sy;
-
-  sprite->fillScreen(bg);
-  const float shrink = 1 - p.lift / 70;
-  ellipse(fb, cx, GROUND + 4, R * 0.78f * shrink, 7 * shrink, blend(bg, 0x0000, 0.35f));
-  // A black orb disappears on the dark screens, so it gets a thin blue rim there.
-  if (luma(bg) < 40) {
-    ellipse(fb, cx, cy, rx, ry, blend(bg, GROK, 0.5f));
-    ellipse(fb, cx, cy, rx - 3, ry - 3, ORB);
-  } else {
-    ellipse(fb, cx, cy, rx, ry, ORB);
-  }
-  drawEyes(fb, p, cx, cy);
-  drawExtras(now, cx, cy - ry);
-  sprite->flush();
+  if (!stage.sprite || mood == BotMood::Hidden) return false;
+  float cx, top;
+  drawOrb(stage, poseFor(now), bg, &cx, &top);
+  drawExtras(stage, now, cx, top);
+  stage.sprite->flush();
   return true;
+}
+
+void botSplash(uint32_t durationMs) {
+  if (!panel) return;
+  // Big orb centered on the whole panel; the sprite is freed afterwards.
+  constexpr int W = 420, H = 460;
+  Stage big = {nullptr, W, H, 150.0f, W / 2.0f, 410.0f};
+  big.sprite = new Sprite(panel, W, H, (LCD_W - W) / 2, (LCD_H - H) / 2);
+  if (!big.sprite->begin(GFX_SKIP_OUTPUT_BEGIN)) {
+    Serial.println("splash sprite allocation failed");
+    delete big.sprite;
+    return;
+  }
+  panel->fillScreen(SPLASH_BG);
+  const uint32_t start = millis();
+  for (uint32_t t = 0; t < durationMs; t = millis() - start) {
+    float cx, top;
+    drawOrb(big, splashPose(t), SPLASH_BG, &cx, &top);
+    big.sprite->flush();
+    panel->flush();
+    delay(10);
+  }
+  delete big.sprite;
 }
