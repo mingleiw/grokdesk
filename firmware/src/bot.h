@@ -10,6 +10,7 @@ class Arduino_GFX;
 #define BOT_STAGE_Y 120
 #define BOT_STAGE_W 184
 #define BOT_STAGE_H 232
+#define BOT_STRIP_H 58  // the stage is drawn in 4 strips through internal RAM
 #define BOT_FRAME_MS 40
 
 enum class BotMood {

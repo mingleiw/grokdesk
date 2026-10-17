@@ -45,8 +45,10 @@ void drawEyes(const Stage &st, const Pose &p, float cx, float cy) {
 
 }  // namespace
 
-Sprite::Sprite(Arduino_G *out, int16_t w, int16_t h, int16_t x, int16_t y) : Arduino_Canvas(w, h, out, x, y) {
-  _framebuffer = static_cast<uint16_t *>(heap_caps_malloc(w * h * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+Sprite::Sprite(Arduino_G *out, int16_t w, int16_t h, int16_t x, int16_t y, bool internal)
+    : Arduino_Canvas(w, h, out, x, y) {
+  _framebuffer = static_cast<uint16_t *>(
+      heap_caps_malloc(w * h * 2, (internal ? MALLOC_CAP_INTERNAL : MALLOC_CAP_SPIRAM) | MALLOC_CAP_8BIT));
 }
 
 float clamp01(float v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
@@ -82,16 +84,26 @@ float luma(uint16_t c) {
   return 0.299f * ((c >> 11) << 3) + 0.587f * (((c >> 5) & 0x3F) << 2) + 0.114f * ((c & 0x1F) << 3);
 }
 
+// First and last picture rows of [ya, yb] that fall inside the sprite.
+static inline int rowFrom(const Stage &st, int ya) { return ya < st.y0 ? st.y0 : ya; }
+static inline int rowTo(const Stage &st, int yb) { return yb > st.y0 + st.h - 1 ? st.y0 + st.h - 1 : yb; }
+
 void plot(const Stage &st, int x, int y, uint16_t color, float coverage) {
+  y -= st.y0;
   if (coverage <= 0 || x < 0 || y < 0 || x >= st.w || y >= st.h) return;
   uint16_t &px = st.sprite->getFramebuffer()[y * st.w + x];
   px = coverage >= 1 ? color : blend(px, color, coverage);
 }
 
+void cursor(const Stage &st, float x, float y) {
+  // Truncate before shifting, so a strip places text on the same row as one full sprite.
+  st.sprite->setCursor(static_cast<int16_t>(x), static_cast<int16_t>(static_cast<int>(y) - st.y0));
+}
+
 void rect(const Stage &st, int x, int y, int w, int h, uint16_t color) {
   uint16_t *fb = st.sprite->getFramebuffer();
-  for (int yy = y < 0 ? 0 : y; yy < y + h && yy < st.h; yy++) {
-    for (int xx = x < 0 ? 0 : x; xx < x + w && xx < st.w; xx++) fb[yy * st.w + xx] = color;
+  for (int yy = rowFrom(st, y < 0 ? 0 : y); yy <= rowTo(st, y + h - 1); yy++) {
+    for (int xx = x < 0 ? 0 : x; xx < x + w && xx < st.w; xx++) fb[(yy - st.y0) * st.w + xx] = color;
   }
 }
 
@@ -101,8 +113,8 @@ void ellipse(const Stage &st, float cx, float cy, float rx, float ry, uint16_t c
   if (rx <= 0 || ry <= 0) return;
   const float m = rx < ry ? rx : ry;
   uint16_t *fb = st.sprite->getFramebuffer();
-  for (int y = static_cast<int>(cy - ry - 1); y <= static_cast<int>(cy + ry + 1); y++) {
-    if (y < 0 || y >= st.h) continue;
+  for (int y = rowFrom(st, static_cast<int>(cy - ry - 1)); y <= rowTo(st, static_cast<int>(cy + ry + 1)); y++) {
+    if (y < 0) continue;
     const float ny = (y + 0.5f - cy) / ry;
     // Solid run: pixels whose centers sit inside the ellipse shrunk by 3 px.
     const float iny = (y + 0.5f - cy) / (ry - 3.0f);
@@ -110,7 +122,7 @@ void ellipse(const Stage &st, float cx, float cy, float rx, float ry, uint16_t c
     const int solidL = static_cast<int>(ceilf(cx - span - 0.5f)), solidR = static_cast<int>(floorf(cx + span - 0.5f)) + 1;
     for (int x = static_cast<int>(cx - rx - 1); x <= static_cast<int>(cx + rx + 1); x++) {
       if (x >= solidL && x < solidR) {
-        if (x >= 0 && x < st.w) fb[y * st.w + x] = color;
+        if (x >= 0 && x < st.w) fb[(y - st.y0) * st.w + x] = color;
         continue;
       }
       const float nx = (x + 0.5f - cx) / rx;
@@ -122,7 +134,7 @@ void ellipse(const Stage &st, float cx, float cy, float rx, float ry, uint16_t c
 
 void capsule(const Stage &st, float cx, float cy, float ax, float ay, float h, float r, uint16_t color) {
   const float ex = fabsf(ax) * h + r + 1, ey = fabsf(ay) * h + r + 1;
-  for (int y = static_cast<int>(cy - ey); y <= static_cast<int>(cy + ey); y++) {
+  for (int y = rowFrom(st, static_cast<int>(cy - ey)); y <= rowTo(st, static_cast<int>(cy + ey)); y++) {
     for (int x = static_cast<int>(cx - ex); x <= static_cast<int>(cx + ex); x++) {
       const float px = x + 0.5f - cx, py = y + 0.5f - cy;
       float t = px * ax + py * ay;
@@ -134,7 +146,7 @@ void capsule(const Stage &st, float cx, float cy, float ax, float ay, float h, f
 }
 
 void arcUp(const Stage &st, float cx, float cy, float rad, float thick, uint16_t color) {
-  for (int y = static_cast<int>(cy - rad - thick - 1); y <= static_cast<int>(cy + thick); y++) {
+  for (int y = rowFrom(st, static_cast<int>(cy - rad - thick - 1)); y <= rowTo(st, static_cast<int>(cy + thick)); y++) {
     for (int x = static_cast<int>(cx - rad - thick - 1); x <= static_cast<int>(cx + rad + thick + 1); x++) {
       const float px = x + 0.5f - cx, py = y + 0.5f - cy;
       float d;

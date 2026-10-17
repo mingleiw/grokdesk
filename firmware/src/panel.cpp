@@ -107,7 +107,9 @@ bool panelBegin() {
       1, LCD_PCLK_HZ, false,
       0, 0, static_cast<size_t>(LCD_W) * 10);
 
-  gfx = new Arduino_RGB_Display(LCD_W, LCD_H, rgbPanel, 0, false);
+  // auto_flush: each draw writes back only the cache lines it touched, instead of
+  // flush() pushing the whole 768 KB framebuffer through PSRAM every frame.
+  gfx = new Arduino_RGB_Display(LCD_W, LCD_H, rgbPanel, 0, true);
   if (!gfx->begin(LCD_PCLK_HZ)) {
     Serial.println("RGB panel begin failed");
     return false;
