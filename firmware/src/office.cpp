@@ -92,7 +92,22 @@ struct Agent {
 };
 
 Stage desks[ROLES];
+Arduino_GFX *panel = nullptr;
 uint32_t storyStart = 0;
+
+// What each desk's label area last showed. The label area is redrawn and copied
+// to the panel only when this changes; every frame copies just the rows above it.
+struct LabelKey {
+  AgentStatus status;
+  const char *skill;
+  const char *text;
+  bool open;
+  bool operator==(const LabelKey &o) const {
+    return status == o.status && skill == o.skill && text == o.text && open == o.open;
+  }
+};
+LabelKey drawnLabel[ROLES];
+bool labelValid[ROLES] = {false, false, false};
 int selected = -1;
 uint32_t selectedAt = 0;
 
@@ -190,7 +205,7 @@ void monitor(const Stage &st, Role role, const Agent &a, uint32_t now) {
       }
       static const uint8_t widths[] = {58, 34, 70, 46, 22, 64, 40, 52};
       static const uint16_t colors[] = {GROK, GREEN, PURPLE, GROK, AMBER, GREEN, GROK, PURPLE};
-      const uint32_t step = role == REVIEWER ? 600 : 220;
+      const uint32_t step = role == REVIEWER ? 900 : 450;
       const uint32_t scroll = now / step;
       for (int k = 0; k < 6; k++) {
         const int idx = (k + scroll) % 8;
@@ -204,7 +219,6 @@ void monitor(const Stage &st, Role role, const Agent &a, uint32_t now) {
         for (int y = SCREEN_Y + 3 + k * 10; y < SCREEN_Y + 14 + k * 10; y++)
           for (int x = SCREEN_X; x < SCREEN_X + SCREEN_W; x++) plot(st, x, y, AMBER, 0.22f);
       }
-      if (role == BUILDER && (now / 400) % 2) rect(st, SCREEN_X + 6, SCREEN_Y + 58, 6, 5, WHITE);
       break;
     }
     case AgentStatus::Blocked:
@@ -214,7 +228,7 @@ void monitor(const Stage &st, Role role, const Agent &a, uint32_t now) {
       break;
     case AgentStatus::Waiting: {
       rect(st, SCREEN_X, SCREEN_Y, SCREEN_W, SCREEN_H, c565(0x14, 0x1a, 0x24));
-      const int lit = static_cast<int>((now / 350) % 3);
+      const int lit = static_cast<int>((now / 700) % 3);
       for (int j = 0; j < 3; j++) ellipse(st, mx - 16 + 16 * j, my, 4, 4, j == lit ? AMBER : blend(AMBER, WALL, 0.6f));
       break;
     }
@@ -231,7 +245,7 @@ Pose poseFor(int i, const Agent &a, uint32_t now) {
   const uint32_t t = now + i * 577;  // desks move out of step
   switch (a.status) {
     case AgentStatus::Working:
-      p.lift = 3 + 2 * wave(t, 520);
+      p.lift = 2 + 1.5f * wave(t, 900);
       p.lookX = -1;
       p.lookY = 0.45f;
       p.blink = blinkAt(t, 3700);
@@ -239,8 +253,8 @@ Pose poseFor(int i, const Agent &a, uint32_t now) {
     case AgentStatus::Blocked: {
       p.eyeScale = 1.15f;
       p.lookX = -0.3f;
-      const uint32_t s = t % 1400;
-      if (s < 300) p.dx = 5 * sinf(TAU_F * s / 80.0f);
+      const uint32_t s = t % 2600;
+      if (s < 300) p.dx = 4 * sinf(TAU_F * s / 80.0f);
       p.blink = blinkAt(t, 5300);
       break;
     }
@@ -292,7 +306,7 @@ void aboveHead(const Stage &st, const Agent &a, uint32_t now, float cx, float to
       sp->print('!');
       break;
     case AgentStatus::Waiting: {
-      const int lit = static_cast<int>((now / 350) % 3);
+      const int lit = static_cast<int>((now / 700) % 3);
       for (int j = 0; j < 3; j++) ellipse(st, cx - 16 + 16 * j, top - 18, 4, 4, j == lit ? AMBER : blend(AMBER, WALL, 0.6f));
       break;
     }
@@ -373,13 +387,16 @@ void label(const Stage &st, Role role, const Agent &a, bool open) {
   textWrapped(sp, a.text, 14, CARD_Y + 52, 3, WHITE);
 }
 
-void drawDesk(int i, uint32_t now) {
+void drawDesk(int i, uint32_t now, bool full) {
   const Stage &st = desks[i];
   const Role role = static_cast<Role>(i);
   const Agent a = agentAt(role, now);
+  const LabelKey key = {a.status, a.skill, a.text, selected == i};
+  const bool labelDirty = full || !labelValid[i] || !(drawnLabel[i] == key);
+  const int rows = labelDirty ? st.h : CARD_Y;
   rect(st, 0, 0, st.w, OFFICE_WALL_H, WALL);
   rect(st, 0, OFFICE_WALL_H, st.w, 4, BASEBOARD);
-  rect(st, 0, OFFICE_WALL_H + 4, st.w, st.h - OFFICE_WALL_H - 4, FLOOR);
+  rect(st, 0, OFFICE_WALL_H + 4, st.w, rows - OFFICE_WALL_H - 4, FLOOR);
 
   const Pose p = poseFor(i, a, now);
   float cx, top;
@@ -404,13 +421,20 @@ void drawDesk(int i, uint32_t now) {
     }
   }
   aboveHead(st, a, now, cx, top);
-  label(st, role, a, selected == i);
-  st.sprite->flush();
+  if (labelDirty) {
+    label(st, role, a, selected == i);
+    drawnLabel[i] = key;
+    labelValid[i] = true;
+  }
+  // The sprite's rows are contiguous, so its top `rows` rows copy as one bitmap.
+  panel->draw16bitRGBBitmap(OFFICE_LEFT + i * (OFFICE_DESK_W + OFFICE_DESK_GAP), OFFICE_TOP, st.sprite->getFramebuffer(),
+                            st.w, rows);
 }
 
 }  // namespace
 
 bool officeBegin(Arduino_GFX *out) {
+  panel = out;
   for (int i = 0; i < ROLES; i++) {
     desks[i] = {nullptr, OFFICE_DESK_W, OFFICE_H, ORB_R, ORB_CX, ORB_GROUND};
     desks[i].sprite = new Sprite(out, OFFICE_DESK_W, OFFICE_H, OFFICE_LEFT + i * (OFFICE_DESK_W + OFFICE_DESK_GAP), OFFICE_TOP);
@@ -431,10 +455,10 @@ bool officeBegin(Arduino_GFX *out) {
 uint16_t officeWallColor() { return WALL; }
 uint16_t officeFloorColor() { return FLOOR; }
 
-bool officeDraw(uint32_t now) {
+bool officeDraw(uint32_t now, bool full) {
   if (!desks[0].sprite) return false;
   if (selected >= 0 && now - selectedAt > SELECT_MS) selected = -1;
-  for (int i = 0; i < ROLES; i++) drawDesk(i, now);
+  for (int i = 0; i < ROLES; i++) drawDesk(i, now, full);
   return true;
 }
 
