@@ -64,6 +64,7 @@
 #define GT911_ADDR_14 0x14
 #define GT911_REG_ID 0x8140
 #define GT911_REG_STATUS 0x814E
+#define GT911_REG_POINT1 0x8150  // x lo, x hi, y lo, y hi of the first point
 
 #ifndef STATUS_URL
 #define STATUS_URL "https://raw.githubusercontent.com/mingleiw/grokdesk/main/status.json"
@@ -71,5 +72,7 @@
 
 #define POLL_MS 30000UL
 #define SPLASH_MS 4600UL
+#define TAP_MS 350UL
+#define OFFICE_DEFAULT true  // boot into the agent office; tap the top bar for deploy status
 #define LONG_PRESS_MS 3000UL
 #define AP_NAME "GrokDesk-Setup"

@@ -144,6 +144,29 @@ The sprite is drawn off-screen in PSRAM (`firmware/src/bot.cpp`) and copied into
 
 The top bar is the UTC clock (from NTP), `GROKDESK`, and the Wi-Fi mark. The footer is `grokdesk` and `upd HH:MM` from `updated_at`. `run_url` is printed at 115200 and, on the failed explanation, as a short line.
 
+### Agent office (SIMULATED)
+
+After the splash, the panel opens a tiny office for your agents. Each agent has a desk, a character and a job:
+
+| Agent | Character | Job |
+|---|---|---|
+| Builder | Grok Bot in a hard hat, code on the monitor | writing the fix |
+| Reviewer | Grok Bot with a magnifying glass | checking the changes |
+| Tester | Grok Bot with a flask | running tests |
+
+Each character animates by status:
+
+| Status | Animation | Chip |
+|---|---|---|
+| `working` | Quick bob, eyes on the monitor (code scrolling, a lens sweeping, a test bar filling) | blue |
+| `blocked` | Red `!` overhead, red X on the monitor, shakes | red |
+| `waiting` | Looks around, amber dots overhead | amber |
+| `done` | Hops with confetti for 3 s, then a green check | green |
+
+**Tap a character** to open its card: the role, its skill (`pstack`), and its latest update. Tap again, or wait 10 s, to close it. **Tap the top bar** to switch between the office and deploy status. `OFFICE_DEFAULT` in `board_config.h` picks which one the panel boots into.
+
+For now a built-in 44 s story drives the statuses (`STORY` in `firmware/src/office.cpp`). The builder finishes and celebrates, the reviewer approves, the tester finds a bug, everyone goes back to work, and the second round ends all green. The footer says `agents SIMULATED`. Real agents would replace `STORY` with their status events, one `{agent, status, text}` per update.
+
 ### Flash from the browser
 
 Open `https://mingleiw.github.io/grokdesk/flash/` in **Chrome or Edge** on a computer (WebSerial). Plug the board in with a **USB-C data cable**. Click **Install GrokDesk** and choose the USB serial port.

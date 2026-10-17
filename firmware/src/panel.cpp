@@ -119,11 +119,27 @@ bool panelBegin() {
 
 Arduino_GFX *panelGfx() { return gfx; }
 
+static bool touchDown = false;
+static int touchX = 0, touchY = 0;
+
 bool panelTouchDown() {
   uint8_t status = 0;
   if (!gtRead(GT911_REG_STATUS, &status, 1)) return false;
-  const bool fresh = (status & 0x80) != 0;
+  // Bit 7 marks a new report. Between reports the last one still holds, so a
+  // fast loop does not read a held finger as released.
+  if ((status & 0x80) == 0) return touchDown;
   const uint8_t points = status & 0x0F;
-  if (fresh) gtWrite(GT911_REG_STATUS, 0);
-  return fresh && points > 0;
+  uint8_t pt[4];
+  if (points > 0 && gtRead(GT911_REG_POINT1, pt, 4)) {
+    touchX = pt[0] | (pt[1] << 8);
+    touchY = pt[2] | (pt[3] << 8);
+  }
+  gtWrite(GT911_REG_STATUS, 0);
+  touchDown = points > 0;
+  return touchDown;
+}
+
+void panelTouchPoint(int *x, int *y) {
+  *x = touchX;
+  *y = touchY;
 }
