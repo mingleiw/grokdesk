@@ -21,6 +21,7 @@
 
 #include "board_config.h"
 #include "bot.h"
+#include "office.h"
 #include "panel.h"
 
 struct DeskStatus {
@@ -42,6 +43,8 @@ static String staleReason = "waiting";
 static bool restartPending = false;
 static uint32_t lastPoll = 0;
 static bool polledOnce = false;
+static bool officeMode = OFFICE_DEFAULT;
+static bool holdBarUp = false;  // animation pauses so it does not paint over the bar
 static char clockText[8] = "--:--";
 static char clockDrawn[8] = "";
 
@@ -188,6 +191,13 @@ static void render() {
     drawCentered(AP_NAME, 260, 4, COL_FIX);
     drawCentered("Open the page it offers.", 330, 3, COL_WHITE);
     drawCentered("Hold the screen 3s to reset Wi-Fi.", 390, 2, COL_DIM);
+  } else if (officeMode) {
+    // Agent office (SIMULATED). The desks are sprites; paint the gaps around them.
+    botSet(BotMood::Hidden, COL_DARK);
+    gfx->fillRect(0, 48, LCD_W, OFFICE_TOP + OFFICE_WALL_H - 48, officeWallColor());
+    gfx->fillRect(0, OFFICE_TOP + OFFICE_WALL_H, LCD_W, LCD_H - 44 - OFFICE_TOP - OFFICE_WALL_H, officeFloorColor());
+    drawChrome(officeWallColor(), COL_WHITE, "agents SIMULATED");
+    officeDraw(millis());
   } else if (!wifiUp && !status.ok) {
     botSet(BotMood::Hidden, COL_ERR);
     gfx->fillScreen(COL_ERR);
@@ -421,6 +431,21 @@ static void resetWifi() {
   ESP.restart();
 }
 
+// Top bar switches between the agent office and deploy status. In the office,
+// a tap on a desk opens or closes that agent's latest update.
+static void handleTap() {
+  if (portalUp) return;
+  int x, y;
+  panelTouchPoint(&x, &y);
+  Serial.printf("tap %d,%d\n", x, y);
+  if (y < 48) {
+    officeMode = !officeMode;
+    render();
+  } else if (officeMode) {
+    officeTap(x, y, millis());
+  }
+}
+
 static void serviceTouch() {
   static bool down = false;
   static uint32_t began = 0;
@@ -440,13 +465,17 @@ static void serviceTouch() {
     } else if (!fired && now - began > 300 && now - lastBar > 150) {
       lastBar = now;
       const float f = static_cast<float>(now - began) / static_cast<float>(LONG_PRESS_MS);
+      holdBarUp = true;
       drawHold(f > 1 ? 1 : f);
     }
   } else if (down) {
     const bool wasShowing = now - began > 300 && !fired;
+    const bool tap = now - began < TAP_MS && !fired;
     down = false;
     fired = false;
+    holdBarUp = false;
     if (wasShowing) render();
+    else if (tap) handleTap();
   }
 }
 
@@ -462,6 +491,7 @@ void setup() {
   }
   botBegin(panelGfx());
   botSplash(SPLASH_MS);
+  officeBegin(panelGfx());
 
   wm.setDebugOutput(true, WM_DEBUG_NOTIFY);
   wm.setConfigPortalBlocking(false);
@@ -520,9 +550,10 @@ void loop() {
   // The bot freezes while a status fetch blocks, then picks up where the clock is.
   static uint32_t lastFrame = 0;
   const uint32_t now = millis();
-  if (now - lastFrame >= BOT_FRAME_MS) {
+  if (!holdBarUp && now - lastFrame >= (officeMode ? OFFICE_FRAME_MS : BOT_FRAME_MS)) {
     lastFrame = now;
-    if (botDraw(now)) panelGfx()->flush();
+    const bool drew = officeMode ? !portalUp && officeDraw(now) : botDraw(now);
+    if (drew) panelGfx()->flush();
   }
 
   delay(10);

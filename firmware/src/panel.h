@@ -10,5 +10,9 @@ bool panelBegin();
 
 Arduino_GFX *panelGfx();
 
-// True while a finger is down. False when the controller does not answer.
+// True while a finger is down. Keeps the last answer between controller updates.
+// False when the controller does not answer.
 bool panelTouchDown();
+
+// Panel coordinates of the most recent touch point.
+void panelTouchPoint(int *x, int *y);
