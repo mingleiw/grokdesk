@@ -163,7 +163,15 @@ Each character animates by status:
 | `waiting` | Looks around, amber dots overhead | amber |
 | `done` | Hops with confetti for 3 s, then a green check | green |
 
-**Tap a character** to open its card: the role, its skill (`pstack`), and its latest update. Tap again, or wait 10 s, to close it. **Tap the top bar** to switch between the office and deploy status. `OFFICE_DEFAULT` in `board_config.h` picks which one the panel boots into.
+Every agent runs [pstack](https://github.com/cursor/plugins/tree/main/pstack). The skill each one is using sits under its status chip:
+
+| Agent | pstack skill |
+|---|---|
+| Builder | `/poteto-mode` (bug-fix playbook: reproduce, binary-search the cause, fix, verify, open the PR) |
+| Reviewer | `/interrogate` (several models try to break the diff), `/blast-radius` in the second round |
+| Tester | `/tdd` (failing regression test first, then the suite) |
+
+**Tap a character** to open its card: the role, `pstack`, the skill, and its latest update. Tap again, or wait 10 s, to close it. **Tap the top bar** to switch between the office and deploy status. `OFFICE_DEFAULT` in `board_config.h` picks which one the panel boots into.
 
 For now a built-in 44 s story drives the statuses (`STORY` in `firmware/src/office.cpp`). The builder finishes and celebrates, the reviewer approves, the tester finds a bug, everyone goes back to work, and the second round ends all green. The footer says `agents SIMULATED`. Real agents would replace `STORY` with their status events, one `{agent, status, text}` per update.
 
