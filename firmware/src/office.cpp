@@ -91,7 +91,8 @@ struct Agent {
   uint32_t since;  // millis() when this status began
 };
 
-Stage desks[ROLES];
+// All desks share one strip sprite in internal RAM; see drawStrips() in orb.h.
+Stage desk = {nullptr, OFFICE_DESK_W, OFFICE_STRIP_H, ORB_R, ORB_CX, ORB_GROUND};
 Arduino_GFX *panel = nullptr;
 uint32_t storyStart = 0;
 
@@ -302,7 +303,7 @@ void aboveHead(const Stage &st, const Agent &a, uint32_t now, float cx, float to
       ellipse(st, cx, top - 24, 14, 14, RED);
       sp->setTextSize(3);
       sp->setTextColor(WHITE);
-      sp->setCursor(static_cast<int16_t>(cx - 8), static_cast<int16_t>(top - 35));
+      cursor(st, cx - 8, top - 35);
       sp->print('!');
       break;
     case AgentStatus::Waiting: {
@@ -333,15 +334,17 @@ void aboveHead(const Stage &st, const Agent &a, uint32_t now, float cx, float to
   }
 }
 
-void textCentered(Sprite *sp, const char *s, int y, int size, uint16_t color, int w) {
+void textCentered(const Stage &st, const char *s, int y, int size, uint16_t color, int w) {
+  Sprite *sp = st.sprite;
   sp->setTextSize(size);
   sp->setTextColor(color);
-  sp->setCursor(static_cast<int16_t>((w - static_cast<int>(strlen(s)) * 6 * size) / 2), static_cast<int16_t>(y));
+  cursor(st, (w - static_cast<int>(strlen(s)) * 6 * size) / 2, y);
   sp->print(s);
 }
 
 // Word-wrapped size-2 text, up to `maxLines` lines of TEXT_CHARS.
-void textWrapped(Sprite *sp, const char *s, int x, int y, int maxLines, uint16_t color) {
+void textWrapped(const Stage &st, const char *s, int x, int y, int maxLines, uint16_t color) {
+  Sprite *sp = st.sprite;
   sp->setTextSize(2);
   sp->setTextColor(color);
   char buf[TEXT_CHARS + 1];
@@ -355,7 +358,7 @@ void textWrapped(Sprite *sp, const char *s, int x, int y, int maxLines, uint16_t
     }
     memcpy(buf, s, n);
     buf[n] = '\0';
-    sp->setCursor(static_cast<int16_t>(x), static_cast<int16_t>(y + lineNo * 20));
+    cursor(st, x, y + lineNo * 20);
     sp->print(buf);
     s += n;
   }
@@ -365,40 +368,34 @@ void label(const Stage &st, Role role, const Agent &a, bool open) {
   Sprite *sp = st.sprite;
   const uint16_t col = statusColor(a.status);
   if (!open) {
-    textCentered(sp, ROLE_NAME[role], 276, 3, WHITE, st.w);
+    textCentered(st, ROLE_NAME[role], 276, 3, WHITE, st.w);
     const char *word = statusWord(a.status);
     capsule(st, st.w / 2.0f, 324, 1, 0, 50, 15, col);
-    textCentered(sp, word, 317, 2, DARK, st.w);
-    textCentered(sp, a.skill, 352, 2, DIM, st.w);
+    textCentered(st, word, 317, 2, DARK, st.w);
+    textCentered(st, a.skill, 352, 2, DIM, st.w);
     return;
   }
   rect(st, 6, CARD_Y, st.w - 12, 114, col);
   rect(st, 8, CARD_Y + 2, st.w - 16, 110, CARD);
   sp->setTextSize(2);
   sp->setTextColor(col);
-  sp->setCursor(14, CARD_Y + 8);
+  cursor(st, 14, CARD_Y + 8);
   sp->print(ROLE_NAME[role]);
   sp->setTextColor(DIM);
-  sp->setCursor(static_cast<int16_t>(st.w - 14 - static_cast<int>(strlen(SKILL)) * 12), CARD_Y + 8);
+  cursor(st, st.w - 14 - static_cast<int>(strlen(SKILL)) * 12, CARD_Y + 8);
   sp->print(SKILL);
   sp->setTextColor(GROK);
-  sp->setCursor(14, CARD_Y + 30);
+  cursor(st, 14, CARD_Y + 30);
   sp->print(a.skill);
-  textWrapped(sp, a.text, 14, CARD_Y + 52, 3, WHITE);
+  textWrapped(st, a.text, 14, CARD_Y + 52, 3, WHITE);
 }
 
-void drawDesk(int i, uint32_t now, bool full) {
-  const Stage &st = desks[i];
-  const Role role = static_cast<Role>(i);
-  const Agent a = agentAt(role, now);
-  const LabelKey key = {a.status, a.skill, a.text, selected == i};
-  const bool labelDirty = full || !labelValid[i] || !(drawnLabel[i] == key);
-  const int rows = labelDirty ? st.h : CARD_Y;
+void paintDesk(const Stage &st, Role role, const Agent &a, const Pose &p, uint32_t now, int rows, bool withLabel,
+               bool open) {
   rect(st, 0, 0, st.w, OFFICE_WALL_H, WALL);
   rect(st, 0, OFFICE_WALL_H, st.w, 4, BASEBOARD);
   rect(st, 0, OFFICE_WALL_H + 4, st.w, rows - OFFICE_WALL_H - 4, FLOOR);
 
-  const Pose p = poseFor(i, a, now);
   float cx, top;
   drawOrb(st, p, WALL, &cx, &top, false);
   if (role == BUILDER) {
@@ -421,33 +418,36 @@ void drawDesk(int i, uint32_t now, bool full) {
     }
   }
   aboveHead(st, a, now, cx, top);
+  if (withLabel) label(st, role, a, open);
+}
+
+void drawDesk(int i, uint32_t now, bool full) {
+  const Role role = static_cast<Role>(i);
+  const Agent a = agentAt(role, now);
+  const LabelKey key = {a.status, a.skill, a.text, selected == i};
+  const bool labelDirty = full || !labelValid[i] || !(drawnLabel[i] == key);
+  const int rows = labelDirty ? OFFICE_H : CARD_Y;
+  const Pose p = poseFor(i, a, now);
+  drawStrips(desk, OFFICE_STRIP_H, panel, OFFICE_LEFT + i * (OFFICE_DESK_W + OFFICE_DESK_GAP), OFFICE_TOP, rows,
+             [&] { paintDesk(desk, role, a, p, now, rows, labelDirty, selected == i); });
   if (labelDirty) {
-    label(st, role, a, selected == i);
     drawnLabel[i] = key;
     labelValid[i] = true;
   }
-  // The sprite's rows are contiguous, so its top `rows` rows copy as one bitmap.
-  panel->draw16bitRGBBitmap(OFFICE_LEFT + i * (OFFICE_DESK_W + OFFICE_DESK_GAP), OFFICE_TOP, st.sprite->getFramebuffer(),
-                            st.w, rows);
 }
 
 }  // namespace
 
 bool officeBegin(Arduino_GFX *out) {
   panel = out;
-  for (int i = 0; i < ROLES; i++) {
-    desks[i] = {nullptr, OFFICE_DESK_W, OFFICE_H, ORB_R, ORB_CX, ORB_GROUND};
-    desks[i].sprite = new Sprite(out, OFFICE_DESK_W, OFFICE_H, OFFICE_LEFT + i * (OFFICE_DESK_W + OFFICE_DESK_GAP), OFFICE_TOP);
-    if (!desks[i].sprite->begin(GFX_SKIP_OUTPUT_BEGIN)) {
-      Serial.println("office sprite allocation failed");
-      for (int j = 0; j <= i; j++) {
-        delete desks[j].sprite;
-        desks[j].sprite = nullptr;
-      }
-      return false;
-    }
-    desks[i].sprite->setTextWrap(false);
+  desk.sprite = new Sprite(out, OFFICE_DESK_W, OFFICE_STRIP_H, OFFICE_LEFT, OFFICE_TOP, true);
+  if (!desk.sprite->begin(GFX_SKIP_OUTPUT_BEGIN)) {
+    Serial.println("office sprite allocation failed");
+    delete desk.sprite;
+    desk.sprite = nullptr;
+    return false;
   }
+  desk.sprite->setTextWrap(false);
   storyStart = millis();
   return true;
 }
@@ -456,7 +456,7 @@ uint16_t officeWallColor() { return WALL; }
 uint16_t officeFloorColor() { return FLOOR; }
 
 bool officeDraw(uint32_t now, bool full) {
-  if (!desks[0].sprite) return false;
+  if (!desk.sprite) return false;
   if (selected >= 0 && now - selectedAt > SELECT_MS) selected = -1;
   for (int i = 0; i < ROLES; i++) drawDesk(i, now, full);
   return true;

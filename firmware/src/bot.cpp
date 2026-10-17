@@ -135,14 +135,14 @@ void drawExtras(const Stage &st, uint32_t now, float cx, float top) {
   } else if (mood == BotMood::Puzzled) {
     sprite->setTextSize(4);
     sprite->setTextColor(AMBER);
-    sprite->setCursor(static_cast<int16_t>(cx + R * 0.45f + 2 * wave(now, 900)), static_cast<int16_t>(top - 36));
+    cursor(st, cx + R * 0.45f + 2 * wave(now, 900), top - 36);
     sprite->print('?');
   } else if (mood == BotMood::Sleepy) {
     for (int k = 0; k < 2; k++) {
       const float t = fmodf(now / 1800.0f + k * 0.5f, 1.0f);
       sprite->setTextSize(t > 0.5f ? 3 : 2);
       sprite->setTextColor(blend(WHITE, bg, t));
-      sprite->setCursor(static_cast<int16_t>(cx + R * 0.55f + t * 18), static_cast<int16_t>(top + 6 - t * 44));
+      cursor(st, cx + R * 0.55f + t * 18, top + 6 - t * 44);
       sprite->print('z');
     }
   }
@@ -152,7 +152,7 @@ void drawExtras(const Stage &st, uint32_t now, float cx, float top) {
 
 bool botBegin(Arduino_GFX *out) {
   panel = out;
-  stage.sprite = new Sprite(out, BOT_STAGE_W, BOT_STAGE_H, BOT_STAGE_X, BOT_STAGE_Y);
+  stage.sprite = new Sprite(out, BOT_STAGE_W, BOT_STRIP_H, BOT_STAGE_X, BOT_STAGE_Y, true);
   if (!stage.sprite->begin(GFX_SKIP_OUTPUT_BEGIN)) {
     Serial.println("bot sprite allocation failed");
     delete stage.sprite;
@@ -170,19 +170,21 @@ void botSet(BotMood next, uint16_t background) {
 
 bool botDraw(uint32_t now) {
   if (!stage.sprite || mood == BotMood::Hidden) return false;
-  float cx, top;
-  drawOrb(stage, poseFor(now), bg, &cx, &top);
-  drawExtras(stage, now, cx, top);
-  stage.sprite->flush();
+  const Pose p = poseFor(now);
+  drawStrips(stage, BOT_STRIP_H, panel, BOT_STAGE_X, BOT_STAGE_Y, BOT_STAGE_H, [&] {
+    float cx, top;
+    drawOrb(stage, p, bg, &cx, &top);
+    drawExtras(stage, now, cx, top);
+  });
   return true;
 }
 
 void botSplash(uint32_t durationMs) {
   if (!panel) return;
   // Big orb centered on the whole panel; the sprite is freed afterwards.
-  constexpr int W = 420, H = 460;
-  Stage big = {nullptr, W, H, 150.0f, W / 2.0f, 410.0f};
-  big.sprite = new Sprite(panel, W, H, (LCD_W - W) / 2, (LCD_H - H) / 2);
+  constexpr int W = 420, H = 460, ROWS = 40;
+  Stage big = {nullptr, W, ROWS, 150.0f, W / 2.0f, 410.0f};
+  big.sprite = new Sprite(panel, W, ROWS, (LCD_W - W) / 2, (LCD_H - H) / 2, true);
   if (!big.sprite->begin(GFX_SKIP_OUTPUT_BEGIN)) {
     Serial.println("splash sprite allocation failed");
     delete big.sprite;
@@ -191,10 +193,11 @@ void botSplash(uint32_t durationMs) {
   panel->fillScreen(SPLASH_BG);
   const uint32_t start = millis();
   for (uint32_t t = 0; t < durationMs; t = millis() - start) {
-    float cx, top;
-    drawOrb(big, splashPose(t), SPLASH_BG, &cx, &top);
-    big.sprite->flush();
-    panel->flush();
+    const Pose p = splashPose(t);
+    drawStrips(big, ROWS, panel, (LCD_W - W) / 2, (LCD_H - H) / 2, H, [&] {
+      float cx, top;
+      drawOrb(big, p, SPLASH_BG, &cx, &top);
+    });
     delay(10);
   }
   delete big.sprite;

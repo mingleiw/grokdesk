@@ -19,18 +19,21 @@ constexpr uint16_t WHITE = 0xFFFF;
 constexpr uint16_t GROK = 0x7E9F;   // #7fd0ff
 constexpr uint16_t AMBER = 0xFE60;  // #ffcc00
 
-// Sprite whose framebuffer lives in PSRAM; internal RAM is left for Wi-Fi and TLS.
+// Sprite whose framebuffer lives in PSRAM, or with `internal` in internal RAM.
 // Arduino_Canvas::begin() only allocates when _framebuffer is still null.
 class Sprite : public Arduino_Canvas {
  public:
-  Sprite(Arduino_G *out, int16_t w, int16_t h, int16_t x, int16_t y);
+  Sprite(Arduino_G *out, int16_t w, int16_t h, int16_t x, int16_t y, bool internal = false);
 };
 
-// A sprite plus where the orb sits in it.
+// A sprite plus where the orb sits in it. Coordinates are in the whole picture;
+// the sprite holds rows y0 .. y0 + h - 1 of it, so a small sprite in fast internal
+// RAM can draw a tall picture one strip at a time.
 struct Stage {
   Sprite *sprite;
   int w, h;
   float r, cx, ground;
+  int y0 = 0;
   float restCy() const { return ground - r - 6 * r / BASE_R; }
 };
 
@@ -58,6 +61,8 @@ uint16_t blend(uint16_t a, uint16_t b, float t);
 float luma(uint16_t c);
 
 void plot(const Stage &st, int x, int y, uint16_t color, float coverage);
+// Text cursor at picture coordinates.
+void cursor(const Stage &st, float x, float y);
 void rect(const Stage &st, int x, int y, int w, int h, uint16_t color);
 void ellipse(const Stage &st, float cx, float cy, float rx, float ry, uint16_t color);
 // Segment of half-length h along (ax, ay), radius r.
@@ -69,5 +74,20 @@ void arcUp(const Stage &st, float cx, float cy, float rad, float thick, uint16_t
 // `background`. Pose offsets scale with the orb. Returns the orb's center x and top y.
 void drawOrb(const Stage &st, const Pose &p, uint16_t background, float *outCx, float *outTop, bool clear = true,
              uint16_t body = BODY);
+
+// Paints a picture `height` rows tall through the sprite one strip of `rows` rows at
+// a time, copying each strip to (x, y + strip top) on `out`. `draw` paints the whole
+// picture every time; the primitives skip rows outside the current strip. Drawing in
+// a small internal-RAM sprite keeps PSRAM, which the panel scans out of constantly,
+// down to the one write of each finished pixel.
+template <class Draw>
+void drawStrips(Stage &st, int rows, Arduino_GFX *out, int x, int y, int height, Draw draw) {
+  for (int top = 0; top < height; top += rows) {
+    st.y0 = top;
+    st.h = height - top < rows ? height - top : rows;
+    draw();
+    out->draw16bitRGBBitmap(x, y + top, st.sprite->getFramebuffer(), st.w, st.h);
+  }
+}
 
 }  // namespace orb
