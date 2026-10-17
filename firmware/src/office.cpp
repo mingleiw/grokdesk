@@ -49,13 +49,15 @@ constexpr uint32_t SELECT_MS = 10000;
 
 enum Role { BUILDER, REVIEWER, TESTER, ROLES };
 const char *const ROLE_NAME[ROLES] = {"BUILDER", "REVIEWER", "TESTER"};
-// Every agent runs the same skill. Shown on the tap card; real agents report it later.
+// Every agent runs pstack (github.com/cursor/plugins/tree/main/pstack); each event
+// names the pstack skill doing the work.
 const char *const SKILL = "pstack";
 
 struct Event {
   uint32_t at;
   Role agent;
   AgentStatus status;
+  const char *skill;
   const char *text;
 };
 
@@ -63,25 +65,28 @@ struct Event {
 // finds a bug, everyone goes back to work, and the second round goes green.
 constexpr uint32_t STORY_MS = 44000;
 const Event STORY[] = {
-    {0, BUILDER, AgentStatus::Working, "Writing the fix for test_grokdesk_demo.py"},
-    {0, REVIEWER, AgentStatus::Waiting, "Waiting for a diff to review"},
-    {0, TESTER, AgentStatus::Waiting, "Waiting for a build to test"},
-    {7000, BUILDER, AgentStatus::Done, "Fix ready: 1 file, +1 -1"},
-    {7600, REVIEWER, AgentStatus::Working, "Reading the diff"},
-    {12000, REVIEWER, AgentStatus::Done, "Diff looks right. Approved"},
-    {12600, TESTER, AgentStatus::Working, "Running 42 tests"},
-    {18000, TESTER, AgentStatus::Blocked, "Bug found: test_flip_edges fails (2 != 3)"},
-    {20500, BUILDER, AgentStatus::Working, "Fixing edge flips in paired()"},
-    {20500, REVIEWER, AgentStatus::Working, "Re-checking paired() callers"},
-    {21200, TESTER, AgentStatus::Working, "Writing a regression test"},
-    {29000, BUILDER, AgentStatus::Done, "Second fix pushed: +6 -2"},
-    {31000, REVIEWER, AgentStatus::Done, "Approved again"},
-    {32000, TESTER, AgentStatus::Working, "Re-running 43 tests"},
-    {37000, TESTER, AgentStatus::Done, "43/43 passed. Ready to deploy"},
+    {0, BUILDER, AgentStatus::Working, "/poteto-mode", "Bug fix playbook: reproducing the failure"},
+    {0, REVIEWER, AgentStatus::Waiting, "/interrogate", "Waiting for a diff to review"},
+    {0, TESTER, AgentStatus::Waiting, "/tdd", "Waiting for a build to test"},
+    {3500, BUILDER, AgentStatus::Working, "/poteto-mode", "Root cause found. Writing the fix"},
+    {7000, BUILDER, AgentStatus::Done, "/poteto-mode", "Fix verified, PR opened: +1 -1"},
+    {7600, REVIEWER, AgentStatus::Working, "/interrogate", "Two models trying to break the diff"},
+    {12000, REVIEWER, AgentStatus::Done, "/interrogate", "Verdict: no blocking findings"},
+    {12600, TESTER, AgentStatus::Working, "/tdd", "Running 42 tests"},
+    {18000, TESTER, AgentStatus::Blocked, "/tdd", "Bug found: test_flip_edges fails (2 != 3)"},
+    {20500, BUILDER, AgentStatus::Working, "/poteto-mode", "Binary-searching paired() edge flips"},
+    {20500, REVIEWER, AgentStatus::Working, "/blast-radius", "What else breaks if paired() changes?"},
+    {21200, TESTER, AgentStatus::Working, "/tdd", "Failing regression test first"},
+    {25000, BUILDER, AgentStatus::Working, "/poteto-mode", "Fixing edge flips in paired()"},
+    {29000, BUILDER, AgentStatus::Done, "/poteto-mode", "Second fix verified: +6 -2"},
+    {31000, REVIEWER, AgentStatus::Done, "/interrogate", "Approved again"},
+    {32000, TESTER, AgentStatus::Working, "/tdd", "Re-running 43 tests"},
+    {37000, TESTER, AgentStatus::Done, "/tdd", "43/43 passed. Ready to ship"},
 };
 
 struct Agent {
   AgentStatus status;
+  const char *skill;
   const char *text;
   uint32_t since;  // millis() when this status began
 };
@@ -113,9 +118,9 @@ const char *statusWord(AgentStatus s) {
 
 Agent agentAt(Role r, uint32_t now) {
   const uint32_t t = (now - storyStart) % STORY_MS;
-  Agent a = {AgentStatus::Waiting, "", now};
+  Agent a = {AgentStatus::Waiting, "", "", now};
   for (const Event &e : STORY) {
-    if (e.agent == r && e.at <= t) a = {e.status, e.text, now - (t - e.at)};
+    if (e.agent == r && e.at <= t) a = {e.status, e.skill, e.text, now - (t - e.at)};
   }
   return a;
 }
@@ -348,8 +353,9 @@ void label(const Stage &st, Role role, const Agent &a, bool open) {
   if (!open) {
     textCentered(sp, ROLE_NAME[role], 276, 3, WHITE, st.w);
     const char *word = statusWord(a.status);
-    capsule(st, st.w / 2.0f, 330, 1, 0, 50, 15, col);
-    textCentered(sp, word, 323, 2, DARK, st.w);
+    capsule(st, st.w / 2.0f, 324, 1, 0, 50, 15, col);
+    textCentered(sp, word, 317, 2, DARK, st.w);
+    textCentered(sp, a.skill, 352, 2, DIM, st.w);
     return;
   }
   rect(st, 6, CARD_Y, st.w - 12, 114, col);
@@ -361,7 +367,10 @@ void label(const Stage &st, Role role, const Agent &a, bool open) {
   sp->setTextColor(DIM);
   sp->setCursor(static_cast<int16_t>(st.w - 14 - static_cast<int>(strlen(SKILL)) * 12), CARD_Y + 8);
   sp->print(SKILL);
-  textWrapped(sp, a.text, 14, CARD_Y + 32, 4, WHITE);
+  sp->setTextColor(GROK);
+  sp->setCursor(14, CARD_Y + 30);
+  sp->print(a.skill);
+  textWrapped(sp, a.text, 14, CARD_Y + 52, 3, WHITE);
 }
 
 void drawDesk(int i, uint32_t now) {
