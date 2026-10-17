@@ -197,7 +197,7 @@ static void render() {
     gfx->fillRect(0, 48, LCD_W, OFFICE_TOP + OFFICE_WALL_H - 48, officeWallColor());
     gfx->fillRect(0, OFFICE_TOP + OFFICE_WALL_H, LCD_W, LCD_H - 44 - OFFICE_TOP - OFFICE_WALL_H, officeFloorColor());
     drawChrome(officeWallColor(), COL_WHITE, "agents SIMULATED");
-    officeDraw(millis());
+    officeDraw(millis(), true);
   } else if (!wifiUp && !status.ok) {
     botSet(BotMood::Hidden, COL_ERR);
     gfx->fillScreen(COL_ERR);
@@ -545,7 +545,16 @@ void loop() {
   }
 
   refreshClock();
-  if (strcmp(clockText, clockDrawn) != 0) render();
+  if (strcmp(clockText, clockDrawn) != 0) {
+    // In the office only the top bar changes; a full render() would flash the desks.
+    if (officeMode && !portalUp) {
+      drawChrome(officeWallColor(), COL_WHITE, "agents SIMULATED");
+      panelGfx()->flush();
+      strncpy(clockDrawn, clockText, sizeof(clockDrawn) - 1);
+    } else {
+      render();
+    }
+  }
 
   // The bot freezes while a status fetch blocks, then picks up where the clock is.
   static uint32_t lastFrame = 0;

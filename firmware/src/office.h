@@ -6,7 +6,7 @@
 
 class Arduino_GFX;
 
-// Agent office: one desk per agent, each a PSRAM sprite redrawn every frame.
+// Agent office: one desk per agent, each a PSRAM sprite.
 // The characters follow each agent's status; tapping one opens its latest update.
 // For now a scripted story drives the statuses (SIMULATED).
 #define OFFICE_TOP 52
@@ -15,7 +15,7 @@ class Arduino_GFX;
 #define OFFICE_DESK_GAP 12
 #define OFFICE_LEFT ((LCD_W - 3 * OFFICE_DESK_W - 2 * OFFICE_DESK_GAP) / 2)
 #define OFFICE_WALL_H 230  // wall above, floor below, in desk-sprite rows
-#define OFFICE_FRAME_MS 50
+#define OFFICE_FRAME_MS 66
 
 enum class AgentStatus { Working, Blocked, Waiting, Done };
 
@@ -27,7 +27,9 @@ uint16_t officeWallColor();
 uint16_t officeFloorColor();
 
 // Draws all desks for `now` into the panel framebuffer without flushing the cache.
-bool officeDraw(uint32_t now);
+// Each frame repaints the animated part of a desk; its name and status area only
+// when that changed, or when `full` (after the screen behind it was repainted).
+bool officeDraw(uint32_t now, bool full = false);
 
 // A short tap at panel coordinates. Selects or clears a character; returns true
 // when the tap landed on a desk.
